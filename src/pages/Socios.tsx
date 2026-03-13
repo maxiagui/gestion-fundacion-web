@@ -68,7 +68,7 @@ export default function Socios() {
     try {
       // Register payment mocked to today (CURRENT_DATE_MOCK)
       const fechaPagoStr = CURRENT_DATE_MOCK.toISOString().split('T')[0];
-      await ApiService.registerPago(pagosModalSocio.id_socio, nuevoPagoPlan, fechaPagoStr);
+      await ApiService.registerPago(pagosModalSocio.id_socio, nuevoPagoPlan as TipoPlan, fechaPagoStr);
       
       // Reload everything to reflect new end dates
       await loadSocios();
@@ -138,31 +138,31 @@ export default function Socios() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 animate-in fade-in duration-500 w-full overflow-hidden">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Gestión de Socios</h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Administración y estado de pagos</p>
         </div>
         <button 
           onClick={() => { setFormData({ nombre: '', apellido: '', email: '', telefono: '', estado: 'Activo', plan: 'Mensual' }); setIsModalOpen(true); }}
-          className="btn-primary"
+          className="btn-primary w-full sm:w-auto justify-center"
         >
           <Plus className="w-5 h-5 mr-2" /> Nuevo Socio
         </button>
       </div>
 
-      <div className="premium-card !p-0 overflow-hidden flex flex-col shadow-sm">
-        <div className="p-4 border-b border-slate-100 dark:border-dark-700 bg-slate-50/50 dark:bg-dark-900/50 flex justify-between">
-          <div className="relative w-80">
+      <div className="premium-card !p-0 overflow-hidden flex flex-col shadow-sm w-full">
+        <div className="p-4 border-b border-slate-100 dark:border-dark-700 bg-slate-50/50 dark:bg-dark-900/50 flex flex-col sm:flex-row justify-between gap-4">
+          <div className="relative w-full sm:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Buscar por nombre o DNI..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="input-field pl-10" />
+            <input type="text" placeholder="Buscar por nombre o DNI..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="input-field pl-10 w-full" />
           </div>
-          <div className="text-sm font-medium text-slate-500 flex items-center">{filteredSocios.length} asociados encontrados</div>
+          <div className="text-sm font-medium text-slate-500 flex items-center justify-end">{filteredSocios.length} asociados encontrados</div>
         </div>
         
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
               <tr className="bg-slate-50 dark:bg-dark-800 border-b border-slate-200 dark:border-dark-700 text-sm font-semibold text-slate-600 dark:text-slate-300">
                 <th className="p-4">Asociado</th>
@@ -184,21 +184,21 @@ export default function Socios() {
                   <td className="p-4 text-slate-600 dark:text-slate-300">{s.dni || '-'}</td>
                   <td className="p-4 text-slate-600 font-medium">{s.plan || 'Mensual'}</td>
                   <td className="p-4">
-                    <span className={`px-2.5 py-1 ${s.estado === 'Activo' || s.estado === 'Vitalicio' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'} rounded-lg text-xs font-semibold`}>
+                    <span className={`px-2.5 py-1 ${s.estado === 'Activo' || s.estado === 'Vitalicio' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'} rounded-lg text-xs font-semibold whitespace-nowrap`}>
                       {s.estado}
                     </span>
                   </td>
                   <td className="p-4">
                     {isSocioAlDia(s) ? 
-                      <span className="flex items-center text-emerald-600 font-medium text-sm"><UserCheck className="w-4 h-4 mr-1"/> Sí</span> : 
-                      <span className="flex items-center text-red-600 font-medium text-sm"><UserX className="w-4 h-4 mr-1"/> No</span>
+                      <span className="flex items-center text-emerald-600 font-medium text-sm whitespace-nowrap"><UserCheck className="w-4 h-4 mr-1"/> Sí</span> : 
+                      <span className="flex items-center text-red-600 font-medium text-sm whitespace-nowrap"><UserX className="w-4 h-4 mr-1"/> No</span>
                     }
                   </td>
                   <td className="p-4 text-right flex justify-end gap-3">
-                    <button onClick={() => openPagosModal(s)} className="flex items-center text-emerald-600 hover:text-emerald-700 text-sm font-medium transition-colors">
+                    <button onClick={() => openPagosModal(s)} className="flex items-center text-emerald-600 hover:text-emerald-700 text-sm font-medium transition-colors whitespace-nowrap">
                       <DollarSign className="w-4 h-4 mr-1" /> Pagos & Grilla
                     </button>
-                    <button onClick={() => { setFormData(s); setIsModalOpen(true); }} className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+                    <button onClick={() => { setFormData(s); setIsModalOpen(true); }} className="text-primary-600 hover:text-primary-700 text-sm font-medium whitespace-nowrap">
                       Editar
                     </button>
                   </td>
@@ -211,30 +211,30 @@ export default function Socios() {
 
       {/* ABM Socio Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-dark-800 rounded-2xl shadow-xl w-full max-w-lg p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white dark:bg-dark-800 rounded-2xl shadow-xl w-full max-w-lg p-6 my-auto">
             <h2 className="text-xl font-bold mb-4">{formData.id_socio ? 'Editar' : 'Nuevo'} Socio</h2>
             <form onSubmit={handleSubmitSocio} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <input required type="text" placeholder="Nombre" className="input-field" value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} />
-                <input required type="text" placeholder="Apellido" className="input-field" value={formData.apellido} onChange={e => setFormData({...formData, apellido: e.target.value})} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <input required type="text" placeholder="Nombre" className="input-field" value={formData.nombre || ''} onChange={e => setFormData({...formData, nombre: e.target.value})} />
+                <input required type="text" placeholder="Apellido" className="input-field" value={formData.apellido || ''} onChange={e => setFormData({...formData, apellido: e.target.value})} />
               </div>
-              <input type="text" placeholder="DNI (Opcional)" className="input-field" value={formData.dni || ''} onChange={e => setFormData({...formData, dni: e.target.value})} />
-              <div className="grid grid-cols-2 gap-4">
-                <input type="email" placeholder="Email" className="input-field" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-                <input type="text" placeholder="Teléfono" className="input-field" value={formData.telefono} onChange={e => setFormData({...formData, telefono: e.target.value})} />
+              <input type="text" placeholder="DNI (Opcional)" className="input-field w-full" value={formData.dni || ''} onChange={e => setFormData({...formData, dni: e.target.value})} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <input type="email" placeholder="Email" className="input-field w-full" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
+                <input type="text" placeholder="Teléfono" className="input-field w-full" value={formData.telefono || ''} onChange={e => setFormData({...formData, telefono: e.target.value})} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <select className="input-field" value={formData.estado} onChange={e => setFormData({...formData, estado: e.target.value as EstadoSocio})}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <select className="input-field w-full" value={formData.estado} onChange={e => setFormData({...formData, estado: e.target.value as EstadoSocio})}>
                   <option value="Activo">Activo</option><option value="Inactivo">Inactivo</option><option value="Vitalicio">Vitalicio</option><option value="Suspendido">Suspendido</option><option value="Baja">Baja</option>
                 </select>
-                <select className="input-field" value={formData.plan} onChange={e => setFormData({...formData, plan: e.target.value as TipoPlan})}>
+                <select className="input-field w-full" value={formData.plan} onChange={e => setFormData({...formData, plan: e.target.value as TipoPlan})}>
                   <option value="Mensual">Mensual ($7.000)</option><option value="Semestral">Semestral ($25.000)</option><option value="Anual">Anual ($50.000)</option>
                 </select>
               </div>
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary">Cancelar</button>
-                <button type="submit" disabled={isSubmitting} className="btn-primary">{isSubmitting ? 'Guardando...' : 'Guardar'}</button>
+              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t w-full">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary w-full sm:w-auto justify-center">Cancelar</button>
+                <button type="submit" disabled={isSubmitting} className="btn-primary w-full sm:w-auto justify-center">{isSubmitting ? 'Guardando...' : 'Guardar'}</button>
               </div>
             </form>
           </div>
@@ -243,28 +243,28 @@ export default function Socios() {
 
       {/* Pagos & Grilla Modal */}
       {pagosModalSocio && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-dark-800 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white dark:bg-dark-800 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 my-auto">
             {/* Header */}
-            <div className="flex justify-between items-center p-6 border-b border-slate-100 dark:border-dark-700 bg-slate-50 dark:bg-dark-900/50">
+            <div className="flex justify-between items-center p-4 sm:p-6 border-b border-slate-100 dark:border-dark-700 bg-slate-50 dark:bg-dark-900/50">
               <div>
-                <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800 dark:text-white">
-                  <CalendarIcon className="text-primary-500 w-6 h-6" />
+                <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2 text-slate-800 dark:text-white">
+                  <CalendarIcon className="text-primary-500 w-5 h-5 sm:w-6 sm:h-6" />
                   Estado de Cuenta 2026
                 </h2>
-                <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm sm:text-base">
                   {pagosModalSocio.nombre} {pagosModalSocio.apellido} - DNI {pagosModalSocio.dni}
                 </p>
               </div>
-              <button onClick={() => setPagosModalSocio(null)} className="p-2 hover:bg-slate-200 dark:hover:bg-dark-700 rounded-full transition-colors">
-                <X className="w-6 h-6 text-slate-400" />
+              <button onClick={() => setPagosModalSocio(null)} className="p-2 hover:bg-slate-200 dark:hover:bg-dark-700 rounded-full transition-colors flex-shrink-0">
+                <X className="w-5 h-5 sm:w-6 sm:h-6 text-slate-400" />
               </button>
             </div>
 
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
               {/* Left Column: Register New Payment & History */}
-              <div className="w-1/3 border-r border-slate-100 dark:border-dark-700 flex flex-col bg-slate-50/30 dark:bg-dark-900/20">
-                <div className="p-6 border-b border-slate-100 dark:border-dark-700">
+              <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-slate-100 dark:border-dark-700 flex flex-col bg-slate-50/30 dark:bg-dark-900/20 md:overflow-y-auto shrink-0">
+                <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-dark-700">
                   <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-4 flex items-center">
                     <Plus className="w-4 h-4 mr-2 text-emerald-500" /> Registrar Pago
                   </h3>
@@ -272,7 +272,7 @@ export default function Socios() {
                     <div>
                       <label className="text-xs font-semibold text-slate-500 mb-1 block">Tipo de Plan a Pagar</label>
                       <select 
-                        className="input-field bg-white shadow-sm"
+                        className="input-field bg-white shadow-sm w-full"
                         value={nuevoPagoPlan}
                         onChange={(e) => setNuevoPagoPlan(e.target.value as TipoPlan)}
                       >
@@ -281,13 +281,13 @@ export default function Socios() {
                         <option value="Anual">Anual (${VALORES_CUOTA.Anual.toLocaleString()})</option>
                       </select>
                     </div>
-                    <button type="submit" disabled={isRegisteringPago || pagosModalSocio.estado === 'Baja'} className="btn-primary w-full shadow-md bg-emerald-600 hover:bg-emerald-700">
+                    <button type="submit" disabled={isRegisteringPago || pagosModalSocio.estado === 'Baja'} className="btn-primary w-full shadow-md bg-emerald-600 hover:bg-emerald-700 justify-center">
                       {isRegisteringPago ? 'Procesando...' : 'Confirmar Cobro'}
                     </button>
                   </form>
                 </div>
 
-                <div className="p-6 flex-1 overflow-y-auto">
+                <div className="p-4 sm:p-6 flex-1 overflow-y-auto">
                   <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-4 flex items-center text-sm">
                     <History className="w-4 h-4 mr-2" /> Historial de Pagos
                   </h3>
@@ -296,12 +296,12 @@ export default function Socios() {
                   ) : (
                     <div className="space-y-3">
                       {sociosPagos.map(p => (
-                        <div key={p.id_pago} className="p-3 bg-white dark:bg-dark-800 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center text-sm">
-                          <div>
-                            <div className="font-semibold text-slate-700">${p.monto.toLocaleString()}</div>
+                        <div key={p.id_pago} className="p-3 bg-white dark:bg-dark-800 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center text-sm gap-2">
+                          <div className="truncate">
+                            <div className="font-semibold text-slate-700 truncate">${p.monto.toLocaleString()}</div>
                             <div className="text-xs text-slate-500">{new Date(p.fecha_transaccion).toLocaleDateString()}</div>
                           </div>
-                          <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs font-semibold">{p.tipo_pago}</span>
+                          <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs font-semibold flex-shrink-0">{p.tipo_pago}</span>
                         </div>
                       ))}
                     </div>
@@ -310,10 +310,10 @@ export default function Socios() {
               </div>
 
               {/* Right Column: Information & Grid */}
-              <div className="w-2/3 p-8 flex flex-col bg-white dark:bg-dark-800">
+              <div className="w-full md:w-2/3 p-4 sm:p-8 flex flex-col bg-white dark:bg-dark-800 md:overflow-y-auto">
                 
                 {/* Status Box */}
-                <div className="mb-8 p-6 rounded-2xl bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 flex justify-between items-center shadow-inner">
+                <div className="mb-6 sm:mb-8 p-4 sm:p-6 rounded-2xl bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center shadow-inner gap-4">
                   <div>
                     <h4 className="text-sm font-semibold text-slate-500 mb-1">Estado de Cobertura actual</h4>
                     {isSocioAlDia(pagosModalSocio) ? (
@@ -326,7 +326,7 @@ export default function Socios() {
                       </div>
                     )}
                   </div>
-                  <div className="text-right">
+                  <div className="text-left sm:text-right">
                     <div className="text-xs font-semibold text-slate-400 mb-1 block">Fin de cobertura</div>
                     <div className="text-slate-800 font-bold">
                       {pagosModalSocio.estado === 'Vitalicio' ? 'Permanente' : 
@@ -337,18 +337,17 @@ export default function Socios() {
 
                 {/* 12-Month Calendar Grid */}
                 <div>
-                  <h3 className="font-bold text-slate-800 mb-4 text-lg">Grilla de Pagos (Meses Cubiertos 2026)</h3>
-                  <div className="grid grid-cols-4 gap-4">
+                  <h3 className="font-bold text-slate-800 mb-4 text-base sm:text-lg">Grilla de Pagos (Meses Cubiertos 2026)</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                     {getGrillaMeses(pagosModalSocio).meses.map((mes: string, index: number) => {
                       const isCovered = getGrillaMeses(pagosModalSocio).matrix[index];
-                      // Also highlight current month lightly
                       const isCurrentMonth = CURRENT_DATE_MOCK.getMonth() === index;
                       
                       return (
                         <div 
                           key={mes} 
                           className={cn(
-                            "relative overflow-hidden p-4 rounded-xl border flex flex-col items-center justify-center transition-all shadow-sm",
+                            "relative overflow-hidden p-3 sm:p-4 rounded-xl border flex flex-col items-center justify-center transition-all shadow-sm",
                             isCovered 
                               ? "bg-emerald-50 border-emerald-200 text-emerald-700" 
                               : "bg-slate-50 border-slate-200 text-slate-400",
@@ -356,11 +355,11 @@ export default function Socios() {
                             isCurrentMonth && isCovered && "ring-2 ring-emerald-400 ring-offset-2"
                           )}
                         >
-                          <span className="font-bold text-lg mb-1">{mes}</span>
+                          <span className="font-bold text-base sm:text-lg mb-1">{mes}</span>
                           {isCovered ? (
-                            <span className="text-xs bg-emerald-200 text-emerald-800 px-2 rounded-full font-semibold">CUBIERTO</span>
+                            <span className="text-[10px] sm:text-xs bg-emerald-200 text-emerald-800 px-2 rounded-full font-semibold">CUBIERTO</span>
                           ) : (
-                            <span className="text-xs opacity-50">Pendiente</span>
+                            <span className="text-[10px] sm:text-xs opacity-50">Pendiente</span>
                           )}
                           {isCurrentMonth && (
                             <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Mes Actual"></div>
@@ -369,7 +368,7 @@ export default function Socios() {
                       )
                     })}
                   </div>
-                  <div className="mt-8 flex items-center justify-end gap-6 text-sm">
+                  <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row items-start sm:items-center justify-start sm:justify-end gap-3 sm:gap-6 text-xs sm:text-sm">
                     <div className="flex items-center text-slate-500"><div className="w-4 h-4 rounded bg-emerald-100 border border-emerald-200 mr-2"></div> Mes cubierto</div>
                     <div className="flex items-center text-slate-500"><div className="w-4 h-4 rounded bg-slate-50 border border-slate-200 mr-2"></div> Pendiente</div>
                   </div>
