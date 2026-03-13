@@ -19,8 +19,12 @@ function Sidebar() {
 
   return (
     <div className="flex flex-col w-64 bg-sidebar dark:bg-dark-800 border-r border-border dark:border-dark-700 h-screen transition-colors duration-200">
-      <div className="flex items-center justify-center h-20 border-b border-border dark:border-dark-700">
-        <h1 className="text-xl font-bold text-primary-600 dark:text-primary-400">AACM Admin</h1>
+      <div className="flex flex-col items-center justify-center py-8 px-4 border-b border-border dark:border-dark-700">
+        <img 
+          src="/fondologo.jpg" 
+          alt="AACM Logo" 
+          className="w-28 h-28 object-contain rounded-full shadow-md border-2 border-white dark:border-dark-700"
+        />
       </div>
       <nav className="flex-1 px-4 py-6 space-y-2">
         {navigation.map((item) => {
