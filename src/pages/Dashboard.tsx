@@ -144,12 +144,12 @@ export default function Dashboard() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full overflow-hidden">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white dark:bg-dark-800 p-6 rounded-2xl shadow-glass border border-slate-100 dark:border-dark-700 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Dashboard Institucional</h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Resumen financiero al {CURRENT_DATE_MOCK.toLocaleDateString()}</p>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Reporte Institucional</h1>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Informe financiero al {CURRENT_DATE_MOCK.toLocaleDateString()}</p>
         </div>
-        <div className="flex w-full sm:w-auto shadow-sm rounded-xl px-4 py-2 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 font-semibold items-center justify-center border border-primary-100 dark:border-primary-800/30">
+        <div className="flex w-full sm:w-auto shadow-sm rounded-xl px-4 py-2 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 font-semibold items-center justify-center border border-primary-100 dark:border-primary-800/30 capitalize">
           <CalendarCheck className="w-5 h-5 mr-2" />
-          Marzo 2026
+          {new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(CURRENT_DATE_MOCK)}
         </div>
       </div>
 

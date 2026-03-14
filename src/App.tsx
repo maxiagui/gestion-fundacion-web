@@ -5,6 +5,10 @@ import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import Dashboard from './pages/Dashboard';
 import Socios from './pages/Socios';
+import Login from './pages/Login';
+import { AuthProvider } from './contexts/AuthContext';
+import { AuthGuard } from './components/AuthGuard';
+import ProfileSection from './components/ProfileSection';
 
 function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
@@ -13,7 +17,7 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 function SidebarContent({ onClose }: { onClose?: () => void }) {
   const location = useLocation();
   const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+    { name: 'Resumen', href: '/', icon: LayoutDashboard },
     { name: 'Socios', href: '/socios', icon: Users },
     { name: 'Nuevo Socio', href: '/socios/nuevo', icon: UserPlus },
   ];
@@ -65,11 +69,12 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
         })}
       </nav>
       <div className="p-4 border-t border-border dark:border-dark-700">
-        <button className="flex items-center w-full px-4 py-2 text-sm font-medium text-slate-600 rounded-xl hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-dark-700 dark:hover:text-slate-200 transition-colors duration-200">
+        <button className="flex items-center w-full px-4 py-2 mb-2 text-sm font-medium text-slate-600 rounded-xl hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-dark-700 dark:hover:text-slate-200 transition-colors duration-200">
           <Settings className="mr-3 h-5 w-5 text-slate-400" />
           Configuración
         </button>
       </div>
+      <ProfileSection />
     </div>
   );
 }
@@ -148,14 +153,23 @@ function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Layout>
+    <AuthProvider>
+      <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/socios" element={<Socios />} />
-          <Route path="/socios/nuevo" element={<Socios />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/*" element={
+            <AuthGuard>
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/socios" element={<Socios />} />
+                  <Route path="/socios/nuevo" element={<Socios />} />
+                </Routes>
+              </Layout>
+            </AuthGuard>
+          } />
         </Routes>
-      </Layout>
-    </BrowserRouter>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }

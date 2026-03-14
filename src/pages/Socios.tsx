@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ApiService, Socio, Pago, EstadoSocio, TipoPlan, isSocioAlDia, CURRENT_DATE_MOCK, VALORES_CUOTA } from '../services/api';
 import { Search, Plus, UserCheck, UserX, X, Calendar as CalendarIcon, DollarSign, History } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -10,6 +11,7 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 }
 
 export default function Socios() {
+  const { perfil } = useAuth();
   const [socios, setSocios] = useState<Socio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -50,7 +52,7 @@ export default function Socios() {
   const openPagosModal = async (socio: Socio) => {
     setPagosModalSocio(socio);
     setIsLoadingPagos(true);
-    setNuevoPagoPlan((socio.plan as TipoPlan) || 'Mensual');
+    setNuevoPagoPlan('Mensual');
     try {
       const pagos = await ApiService.getPagosBySocio(socio.id_socio);
       setSociosPagos(pagos);
@@ -64,6 +66,19 @@ export default function Socios() {
   const handleRegisterPago = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pagosModalSocio) return;
+
+    if (nuevoPagoPlan === 'Semestral' && pagosModalSocio.vencimiento_actividad) {
+      const currentEnd = new Date(pagosModalSocio.vencimiento_actividad);
+      if (currentEnd > CURRENT_DATE_MOCK) {
+         // si tiene 7 meses cubiertos o mas -> actual payment extends beyond June (month >= 6)
+         if (currentEnd.getMonth() >= 6 && currentEnd.getFullYear() === CURRENT_DATE_MOCK.getFullYear()) {
+             const extra = (currentEnd.getMonth() + 6) - 11; 
+             const proceed = window.confirm(`Con este pago, paga ${extra > 0 ? extra : 1} cuota(s) mas de las correspondientes al año. ¿Desea continuar y topar la cobertura al 31/12?`);
+             if (!proceed) return;
+         }
+      }
+    }
+
     setIsRegisteringPago(true);
     try {
       // Register payment mocked to today (CURRENT_DATE_MOCK)
@@ -166,8 +181,6 @@ export default function Socios() {
             <thead>
               <tr className="bg-slate-50 dark:bg-dark-800 border-b border-slate-200 dark:border-dark-700 text-sm font-semibold text-slate-600 dark:text-slate-300">
                 <th className="p-4">Asociado</th>
-                <th className="p-4">DNI</th>
-                <th className="p-4">Plan</th>
                 <th className="p-4">Estado</th>
                 <th className="p-4">Al Día</th>
                 <th className="p-4 text-right">Acciones</th>
@@ -181,26 +194,26 @@ export default function Socios() {
                   <td className="p-4">
                     <div className="font-semibold text-slate-800 dark:text-slate-200">{s.nombre} {s.apellido}</div>
                   </td>
-                  <td className="p-4 text-slate-600 dark:text-slate-300">{s.dni || '-'}</td>
-                  <td className="p-4 text-slate-600 font-medium">{s.plan || 'Mensual'}</td>
                   <td className="p-4">
-                    <span className={`px-2.5 py-1 ${s.estado === 'Activo' || s.estado === 'Vitalicio' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'} rounded-lg text-xs font-semibold whitespace-nowrap`}>
+                    <span className={`px-2.5 py-1 ${s.estado === 'Activo' || s.estado === 'Vitalicio' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'} rounded-lg text-xs font-semibold whitespace-nowrap`}>
                       {s.estado}
                     </span>
                   </td>
                   <td className="p-4">
                     {isSocioAlDia(s) ? 
-                      <span className="flex items-center text-emerald-600 font-medium text-sm whitespace-nowrap"><UserCheck className="w-4 h-4 mr-1"/> Sí</span> : 
-                      <span className="flex items-center text-red-600 font-medium text-sm whitespace-nowrap"><UserX className="w-4 h-4 mr-1"/> No</span>
+                      <span className="flex items-center text-emerald-600 dark:text-emerald-400 font-medium text-sm whitespace-nowrap"><UserCheck className="w-4 h-4 mr-1"/> Sí</span> : 
+                      <span className="flex items-center text-red-600 dark:text-red-400 font-medium text-sm whitespace-nowrap"><UserX className="w-4 h-4 mr-1"/> No</span>
                     }
                   </td>
-                  <td className="p-4 text-right flex justify-end gap-3">
-                    <button onClick={() => openPagosModal(s)} className="flex items-center text-emerald-600 hover:text-emerald-700 text-sm font-medium transition-colors whitespace-nowrap">
-                      <DollarSign className="w-4 h-4 mr-1" /> Pagos & Grilla
+                  <td className="p-4 text-right flex justify-end gap-2">
+                    <button onClick={() => openPagosModal(s)} className="btn-primary py-1.5 px-3 shadow-sm text-xs font-semibold h-auto">
+                      {perfil?.rol === 'visita' ? 'Info' : 'Pagos'}
                     </button>
-                    <button onClick={() => { setFormData(s); setIsModalOpen(true); }} className="text-primary-600 hover:text-primary-700 text-sm font-medium whitespace-nowrap">
-                      Editar
-                    </button>
+                    {perfil?.rol !== 'visita' && (
+                      <button onClick={() => { setFormData(s); setIsModalOpen(true); }} className="btn-secondary py-1.5 px-3 shadow-sm text-xs font-semibold h-auto">
+                        Editar
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -253,7 +266,7 @@ export default function Socios() {
                   Estado de Cuenta 2026
                 </h2>
                 <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm sm:text-base">
-                  {pagosModalSocio.nombre} {pagosModalSocio.apellido} - DNI {pagosModalSocio.dni}
+                  {pagosModalSocio.nombre} {pagosModalSocio.apellido}
                 </p>
               </div>
               <button onClick={() => setPagosModalSocio(null)} className="p-2 hover:bg-slate-200 dark:hover:bg-dark-700 rounded-full transition-colors flex-shrink-0">
@@ -262,55 +275,64 @@ export default function Socios() {
             </div>
 
             <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
-              {/* Left Column: Register New Payment & History */}
-              <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-slate-100 dark:border-dark-700 flex flex-col bg-slate-50/30 dark:bg-dark-900/20 md:overflow-y-auto shrink-0">
-                <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-dark-700">
-                  <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-4 flex items-center">
-                    <Plus className="w-4 h-4 mr-2 text-emerald-500" /> Registrar Pago
-                  </h3>
-                  <form onSubmit={handleRegisterPago} className="space-y-4">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 mb-1 block">Tipo de Plan a Pagar</label>
-                      <select 
-                        className="input-field bg-white shadow-sm w-full"
-                        value={nuevoPagoPlan}
-                        onChange={(e) => setNuevoPagoPlan(e.target.value as TipoPlan)}
-                      >
-                        <option value="Mensual">Mensual (${VALORES_CUOTA.Mensual.toLocaleString()})</option>
-                        <option value="Semestral">Semestral (${VALORES_CUOTA.Semestral.toLocaleString()})</option>
-                        <option value="Anual">Anual (${VALORES_CUOTA.Anual.toLocaleString()})</option>
-                      </select>
-                    </div>
-                    <button type="submit" disabled={isRegisteringPago || pagosModalSocio.estado === 'Baja'} className="btn-primary w-full shadow-md bg-emerald-600 hover:bg-emerald-700 justify-center">
-                      {isRegisteringPago ? 'Procesando...' : 'Confirmar Cobro'}
-                    </button>
-                  </form>
-                </div>
-
-                <div className="p-4 sm:p-6 flex-1 overflow-y-auto">
-                  <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-4 flex items-center text-sm">
-                    <History className="w-4 h-4 mr-2" /> Historial de Pagos
-                  </h3>
-                  {isLoadingPagos ? <div className="skeleton w-full h-8" /> : sociosPagos.length === 0 ? (
-                    <p className="text-sm text-slate-400 text-center mt-4">No hay pagos registrados.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {sociosPagos.map(p => (
-                        <div key={p.id_pago} className="p-3 bg-white dark:bg-dark-800 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center text-sm gap-2">
-                          <div className="truncate">
-                            <div className="font-semibold text-slate-700 truncate">${p.monto.toLocaleString()}</div>
-                            <div className="text-xs text-slate-500">{new Date(p.fecha_transaccion).toLocaleDateString()}</div>
+              {perfil?.rol !== 'visita' && (
+                <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-slate-100 dark:border-dark-700 flex flex-col bg-slate-50/30 dark:bg-dark-900/20 md:overflow-y-auto shrink-0">
+                  <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-dark-700">
+                    <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-4 flex items-center">
+                      <Plus className="w-4 h-4 mr-2 text-emerald-500" /> Registrar Pago
+                    </h3>
+                    {(() => {
+                      const isFullyCovered = pagosModalSocio.vencimiento_actividad && new Date(pagosModalSocio.vencimiento_actividad) >= new Date(CURRENT_DATE_MOCK.getFullYear(), 11, 31);
+                      if (isFullyCovered) {
+                         return <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 rounded-lg">El año está completamente cubierto.</p>;
+                      }
+                      return (
+                        <form onSubmit={handleRegisterPago} className="space-y-4">
+                          <div>
+                            <label className="text-xs font-semibold text-slate-500 mb-1 block">Tipo de Plan a Pagar</label>
+                            <select 
+                              className="input-field bg-white shadow-sm w-full font-medium"
+                              value={nuevoPagoPlan}
+                              onChange={(e) => setNuevoPagoPlan(e.target.value as TipoPlan)}
+                            >
+                              <option value="Mensual">Mensual (${VALORES_CUOTA.Mensual.toLocaleString()})</option>
+                              <option value="Semestral">Semestral (${VALORES_CUOTA.Semestral.toLocaleString()})</option>
+                              <option value="Anual">Anual (${VALORES_CUOTA.Anual.toLocaleString()})</option>
+                            </select>
                           </div>
-                          <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs font-semibold flex-shrink-0">{p.tipo_pago}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                          <button type="submit" disabled={isRegisteringPago || pagosModalSocio.estado === 'Baja'} className="btn-primary w-full shadow-md bg-emerald-600 hover:bg-emerald-700 justify-center">
+                            {isRegisteringPago ? 'Procesando...' : 'Confirmar Cobro'}
+                          </button>
+                        </form>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="p-4 sm:p-6 flex-1 overflow-y-auto">
+                    <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-4 flex items-center text-sm">
+                      <History className="w-4 h-4 mr-2" /> Historial de Pagos
+                    </h3>
+                    {isLoadingPagos ? <div className="skeleton w-full h-8" /> : sociosPagos.length === 0 ? (
+                      <p className="text-sm text-slate-400 text-center mt-4">No hay pagos registrados.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {sociosPagos.map(p => (
+                          <div key={p.id_pago} className="p-3 bg-white dark:bg-dark-800 rounded-xl border border-slate-100 dark:border-dark-700 shadow-sm flex justify-between items-center text-sm gap-2">
+                            <div className="truncate">
+                              <div className="font-semibold text-slate-700 dark:text-slate-300 truncate">${p.monto.toLocaleString()}</div>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">{new Date(p.fecha_transaccion).toLocaleDateString()}</div>
+                            </div>
+                            <span className="px-2 py-1 bg-slate-100 dark:bg-dark-900/50 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-dark-600 rounded text-xs font-semibold flex-shrink-0">{p.tipo_pago}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Right Column: Information & Grid */}
-              <div className="w-full md:w-2/3 p-4 sm:p-8 flex flex-col bg-white dark:bg-dark-800 md:overflow-y-auto">
+              <div className={cn("w-full p-4 sm:p-8 flex flex-col bg-white dark:bg-dark-800 md:overflow-y-auto", perfil?.rol !== 'visita' && "md:w-2/3")}>
                 
                 {/* Status Box */}
                 <div className="mb-6 sm:mb-8 p-4 sm:p-6 rounded-2xl bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center shadow-inner gap-4">

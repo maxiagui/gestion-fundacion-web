@@ -58,14 +58,26 @@ export function calcularNuevaCobertura(
     const inicio = isCurrentlyCovered ? new Date(baseDate) : new Date(baseDate);
     return { inicio, fin: addMonths(inicio, 1) };
   } else if (tipoPlan === 'Semestral') {
-    // 6 meses desde el primer día del mes de pago (o base)
-    const inicio = startOfMonth(baseDate);
-    return { inicio, fin: addMonths(inicio, 6) };
+    if (!isCurrentlyCovered) {
+       // Si no hay pagos en el año, cubre de enero a junio del año de pago
+       const targetYear = baseDate.getFullYear();
+       const inicio = new Date(targetYear, 0, 1);
+       const fin = new Date(targetYear, 5, 30); // 30 Jun
+       return { inicio, fin };
+    } else {
+       const targetYear = baseDate.getFullYear();
+       let fin = addMonths(baseDate, 6);
+       const endOfYearDate = new Date(targetYear, 11, 31);
+       if (fin > endOfYearDate) {
+           fin = endOfYearDate;
+       }
+       return { inicio: baseDate, fin };
+    }
   } else { // Anual
-    // Desde el 1 de Enero al 31 de Diciembre del año base
-    const year = baseDate.getFullYear();
-    const inicio = startOfYear(new Date(year, 0, 1));
-    const fin = endOfYear(new Date(year, 0, 1));
+    // Desde el 1 de Enero al 31 de Diciembre del año actual (o siguiente si ya está cubierto este año)
+    const targetYear = isCurrentlyCovered ? baseDate.getFullYear() + 1 : baseDate.getFullYear();
+    const inicio = startOfYear(new Date(targetYear, 0, 1));
+    const fin = endOfYear(new Date(targetYear, 0, 1));
     return { inicio, fin };
   }
 }
