@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { addMonths, endOfYear, startOfYear, parseISO, isWithinInterval, startOfMonth } from 'date-fns';
+import { addMonths, endOfYear, startOfYear, parseISO, isWithinInterval, startOfMonth, endOfMonth } from 'date-fns';
 
 export type EstadoSocio = 'Activo' | 'Inactivo' | 'Vitalicio' | 'Suspendido' | 'Baja';
 export type TipoPlan = 'Mensual' | 'Semestral' | 'Anual';
@@ -161,25 +161,62 @@ export const ApiService = {
     return data as Pago[];
   },
 
-  async registerPago(socioId: number, tipoPlan: TipoPlan, fechaPago: string): Promise<Pago> {
-    const { data: socio, error: fetchError } = await supabase
-      .from('socios')
-      .select('*')
+  async registerPago(socioId: number, tipoPlan: TipoPlan, _fechaPago: string): Promise<Pago> {
+    // 1. Obtener la fecha de fin_cobertura más lejana en el año 2026
+    const { data: pagos, error: pagosError } = await supabase
+      .from('pagos')
+      .select('fin_cobertura')
       .eq('id_socio', socioId)
-      .single();
-    
-    if (fetchError) throw fetchError;
+      .gte('fin_cobertura', '2026-01-01')
+      .lte('fin_cobertura', '2026-12-31')
+      .order('fin_cobertura', { ascending: false })
+      .limit(1);
 
-    const { inicio, fin } = calcularNuevaCobertura(tipoPlan, fechaPago, socio.vencimiento_actividad);
+    if (pagosError) throw pagosError;
+
+    let mesesSuma = 0;
+    if (tipoPlan === 'Mensual') mesesSuma = 1;
+    else if (tipoPlan === 'Semestral') mesesSuma = 6;
+    else if (tipoPlan === 'Anual') mesesSuma = 12;
+
+    let finCoberturaStr = '';
+
+    if (tipoPlan === 'Anual') {
+      finCoberturaStr = '2026-12-31';
+    } else {
+      if (pagos && pagos.length > 0) {
+        // Ya tiene pagos, sumar a la fecha existente
+        const baseFecha = parseISO(pagos[0].fin_cobertura);
+        const nuevaFecha = endOfMonth(addMonths(baseFecha, mesesSuma));
+        const yyyy = nuevaFecha.getFullYear();
+        const mm = String(nuevaFecha.getMonth() + 1).padStart(2, '0');
+        const dd = String(nuevaFecha.getDate()).padStart(2, '0');
+        finCoberturaStr = `${yyyy}-${mm}-${dd}`;
+      } else {
+        // No tiene pagos previos en 2026
+        // Inicia el conteo desde el 1 de enero
+        const baseFecha = parseISO('2026-01-01');
+        const nuevaFecha = endOfMonth(addMonths(baseFecha, mesesSuma - 1));
+        const yyyy = nuevaFecha.getFullYear();
+        const mm = String(nuevaFecha.getMonth() + 1).padStart(2, '0');
+        const dd = String(nuevaFecha.getDate()).padStart(2, '0');
+        finCoberturaStr = `${yyyy}-${mm}-${dd}`;
+      }
+    }
+
+    const inicioCoberturaStr = '2026-01-01';
+    
+    // fecha_pago como el momento exacto de la transacción
+    const fechaPagoExacta = new Date().toISOString();
     const monto = VALORES_CUOTA[tipoPlan];
 
     const pagoData = {
       id_socio: socioId,
       monto,
       plan: tipoPlan,
-      fecha_pago: fechaPago + 'T12:00:00Z', 
-      inicio_cobertura: inicio.toISOString().split('T')[0],
-      fin_cobertura: fin.toISOString().split('T')[0]
+      fecha_pago: fechaPagoExacta,
+      inicio_cobertura: inicioCoberturaStr,
+      fin_cobertura: finCoberturaStr
     };
 
     const { data: newPago, error: insertError } = await supabase
@@ -190,13 +227,9 @@ export const ApiService = {
 
     if (insertError) throw insertError;
 
-    const updateData: any = {
-      vencimiento_actividad: fin.toISOString().split('T')[0],
-    };
-
     const { error: updateError } = await supabase
       .from('socios')
-      .update(updateData)
+      .update({ vencimiento_actividad: finCoberturaStr })
       .eq('id_socio', socioId);
 
     if (updateError) throw updateError;

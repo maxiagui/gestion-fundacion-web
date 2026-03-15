@@ -119,13 +119,14 @@ export default function Socios() {
     // Let's use the socio's total coverage limits for now as it's continuous
     if (socio.estado === 'Vitalicio') return { meses, matrix: new Array(12).fill(true) };
     
-    if (socio.fecha_ingreso && socio.vencimiento_actividad) {
-      const start = new Date(socio.fecha_ingreso);
-      const end = new Date(socio.vencimiento_actividad);
+    if (socio.vencimiento_actividad) {
+      // Usar 2026-01-01 como inicio base estático para los pagos del año 2026
+      const start = new Date('2026-01-01T00:00:00Z');
+      const end = new Date(socio.vencimiento_actividad + 'T23:59:59Z');
       
       meses.forEach((_, index) => {
         // mid of the month
-        const targetDate = new Date(2026, index, 15);
+        const targetDate = new Date(Date.UTC(2026, index, 15));
         if (targetDate >= start && targetDate <= end) {
           matrix[index] = true;
         }
@@ -218,12 +219,12 @@ export default function Socios() {
                   <td className="p-3 sm:p-4 truncate max-w-[150px] sm:max-w-none">
                     <div className="font-semibold text-slate-800 dark:text-slate-200 truncate" title={`${s.nombre} ${s.apellido}`}>{s.nombre} {s.apellido}</div>
                   </td>
-                  <td className="p-3 sm:p-4 flex flex-col sm:flex-row justify-center items-center gap-1 sm:gap-2">
-                    <button onClick={() => openPagosModal(s)} className="btn-primary py-1 px-2 sm:py-1.5 sm:px-3 text-[10px] sm:text-xs min-h-0 min-w-16">
+                  <td className="p-3 sm:p-4 flex flex-row justify-center items-center gap-1 sm:gap-2">
+                    <button onClick={() => openPagosModal(s)} className="btn-primary py-1 px-2 sm:py-1.5 sm:px-3 text-xs min-h-0 min-w-16">
                       {perfil?.rol === 'visita' ? 'Info' : 'Pagos'}
                     </button>
                     {perfil?.rol !== 'visita' && (
-                      <button onClick={() => { setFormData(s); setIsModalOpen(true); }} className="btn-secondary py-1 px-2 sm:py-1.5 sm:px-3 text-[10px] sm:text-xs min-h-0 min-w-16">
+                      <button onClick={() => { setFormData(s); setIsModalOpen(true); }} className="btn-secondary py-1 px-2 sm:py-1.5 sm:px-3 text-xs min-h-0 min-w-16">
                         Editar
                       </button>
                     )}
@@ -235,7 +236,7 @@ export default function Socios() {
                     }
                   </td>
                   <td className="p-3 sm:p-4 text-center">
-                    <span className={`px-1.5 sm:px-2.5 py-0.5 sm:py-1 ${s.estado === 'Activo' || s.estado === 'Vitalicio' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' : 'bg-red-100 text-red-700 dark:bg-red-900/30'} rounded-lg text-[10px] sm:text-xs font-semibold whitespace-nowrap`}>
+                    <span className={`px-2 sm:px-2.5 py-1 ${s.estado === 'Activo' || s.estado === 'Vitalicio' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' : 'bg-red-100 text-red-700 dark:bg-red-900/30'} rounded-lg text-xs font-semibold whitespace-nowrap`}>
                       {s.estado}
                     </span>
                   </td>
@@ -343,7 +344,7 @@ export default function Socios() {
                       <Plus className="w-4 h-4 mr-2 text-emerald-500" /> Registrar Pago
                     </h3>
                     {(() => {
-                      const isFullyCovered = pagosModalSocio.vencimiento_actividad && new Date(pagosModalSocio.vencimiento_actividad) >= new Date(CURRENT_DATE_MOCK.getFullYear(), 11, 31);
+                      const isFullyCovered = pagosModalSocio.vencimiento_actividad && pagosModalSocio.vencimiento_actividad >= '2026-12-31';
                       if (isFullyCovered) {
                          return <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 rounded-lg">El año está completamente cubierto.</p>;
                       }
@@ -352,7 +353,7 @@ export default function Socios() {
                           <div>
                             <label className="text-xs font-semibold text-slate-500 mb-1 block">Tipo de Plan a Pagar</label>
                             <select 
-                              className="input-field bg-white shadow-sm w-full font-medium"
+                              className="input-field shadow-sm w-full font-medium"
                               value={nuevoPagoPlan}
                               onChange={(e) => setNuevoPagoPlan(e.target.value as TipoPlan)}
                             >
