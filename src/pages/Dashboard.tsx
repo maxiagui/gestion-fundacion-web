@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, DollarSign, CalendarCheck, TrendingUp, PieChart, AlertTriangle } from 'lucide-react';
 import { ApiService, Socio, Pago, CURRENT_DATE_MOCK, VALORES_CUOTA, isSocioAlDia } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -44,6 +45,50 @@ export default function Dashboard() {
   const [pagos, setPagos] = useState<Pago[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { perfil } = useAuth();
+  
+  const [permissions, setPermissions] = useState<any>({
+    p1: true, p2: true, p3: true, p4: true, p5: true, p6: true
+  });
+
+  useEffect(() => {
+    // Default Permissions
+    const defaults: any = {
+      admin: { p1: true, p2: true, p3: true, p4: true, p5: true, p6: true },
+      operador: { p1: true, p2: true, p3: true, p4: true, p5: false, p6: false },
+      visita: { p1: true, p2: false, p3: false, p4: true, p5: false, p6: false }
+    };
+    
+    const loadPermissions = () => {
+      const stored = localStorage.getItem('aacm_panel_permissions');
+      const rol = perfil?.rol || 'visita';
+      
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          setPermissions(parsed[rol] || defaults[rol]);
+        } catch (e) {
+          setPermissions(defaults[rol]);
+        }
+      } else {
+        setPermissions(defaults[rol]);
+      }
+    };
+
+    loadPermissions();
+
+    // Listen to storage events from other tabs
+    window.addEventListener('storage', loadPermissions);
+    
+    // Also dispatch a custom event from Configuracion if needed, or simply re-read on mount.
+    // We'll add a custom event listener just in case it's in the same window
+    window.addEventListener('aacm_permissions_updated', loadPermissions);
+
+    return () => {
+      window.removeEventListener('storage', loadPermissions);
+      window.removeEventListener('aacm_permissions_updated', loadPermissions);
+    };
+  }, [perfil]);
 
   useEffect(() => {
     async function loadData() {
@@ -71,7 +116,7 @@ export default function Dashboard() {
   // --- 2. Recaudación Anual (2026) ---
   const recaudacionAnual = useMemo(() => {
     return pagos
-      .filter(p => new Date(p.fecha_transaccion).getFullYear() === 2026)
+      .filter(p => new Date(p.fecha_pago).getFullYear() === 2026)
       .reduce((acc, p) => acc + p.monto, 0);
   }, [pagos]);
 
@@ -87,9 +132,9 @@ export default function Dashboard() {
 
     // Check how many have a payment that covers the current month/year
     // Based on actual DB structure from tests wait, DB actually has inicio_cobertura and fin_cobertura in pagos
-    // Let's rely strictly on the `fecha_transaccion` month for the monthly dashboard simplicity or `inicio_cobertura`
-    const paidByMonthly = pagos.filter(p => p.tipo_pago?.toLowerCase() === 'mensual' && new Date(p.fecha_transaccion).getMonth() === currentMonth && new Date(p.fecha_transaccion).getFullYear() === currentYear);
-    const uniquePaidIds = new Set(paidByMonthly.map(p => p.socio_id));
+    // Let's rely strictly on the `fecha_pago` month for the monthly dashboard simplicity or `inicio_cobertura`
+    const paidByMonthly = pagos.filter(p => p.plan?.toLowerCase() === 'mensual' && new Date(p.fecha_pago).getMonth() === currentMonth && new Date(p.fecha_pago).getFullYear() === currentYear);
+    const uniquePaidIds = new Set(paidByMonthly.map(p => p.id_socio));
     
     const pagados = uniquePaidIds.size;
     const pendientes = totalMonthly - pagados;
@@ -109,7 +154,7 @@ export default function Dashboard() {
   const mixData = useMemo(() => {
     let mensual = 0, semestral = 0, anual = 0;
     pagos.forEach(p => {
-      const type = p.tipo_pago?.toLowerCase();
+      const type = p.plan?.toLowerCase();
       if (type === 'mensual') mensual += p.monto;
       if (type === 'semestral') semestral += p.monto;
       if (type === 'anual') anual += p.monto;
@@ -145,17 +190,18 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white dark:bg-dark-800 p-6 rounded-2xl shadow-glass border border-slate-100 dark:border-dark-700 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Reporte Institucional</h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Informe financiero al {CURRENT_DATE_MOCK.toLocaleDateString()}</p>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Informe financiero al {new Date().toLocaleDateString()}</p>
         </div>
         <div className="flex w-full sm:w-auto shadow-sm rounded-xl px-4 py-2 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 font-semibold items-center justify-center border border-primary-100 dark:border-primary-800/30 capitalize">
           <CalendarCheck className="w-5 h-5 mr-2" />
-          {new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(CURRENT_DATE_MOCK)}
+          {new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(new Date())}
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
         {/* Panel 1: Socios al Día */}
+        {permissions.p1 && (
         <div className="premium-card relative overflow-hidden group w-full">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <Users className="w-24 h-24 text-primary-500" />
@@ -173,8 +219,10 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        )}
 
         {/* Panel 2: Recaudación Anual */}
+        {permissions.p2 && (
         <div className="premium-card relative overflow-hidden group w-full">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <DollarSign className="w-24 h-24 text-primary-500" />
@@ -192,8 +240,10 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        )}
 
         {/* Panel 3: Estado de Pago Mensual */}
+        {permissions.p3 && (
         <div className="premium-card relative overflow-hidden group w-full">
           <div className="flex items-center gap-4 mb-4 relative z-10">
             <div className="p-3 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-xl">
@@ -219,8 +269,10 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        )}
 
         {/* Panel 4: Mix de Planes */}
+        {permissions.p4 && (
         <div className="premium-card w-full col-span-1 md:col-span-2 lg:col-span-1 row-span-2 flex flex-col">
           <div className="flex items-center gap-4 mb-6 relative z-10">
             <div className="p-3 bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 rounded-xl flex-shrink-0">
@@ -237,8 +289,10 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        )}
 
         {/* Panel 5: Proyección Mensual */}
+        {permissions.p5 && (
         <div className="premium-card relative overflow-hidden group w-full">
           <div className="flex items-center gap-4 mb-4 relative z-10">
             <div className="p-3 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-xl flex-shrink-0">
@@ -253,8 +307,10 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        )}
 
         {/* Panel 6: Morosidad Crítica */}
+        {permissions.p6 && (
         <div className="premium-card flex flex-col border-red-100 dark:border-red-900/30 w-full overflow-hidden">
           <div className="flex items-center justify-between mb-4 relative z-10">
             <div className="flex items-center gap-4">
@@ -296,6 +352,7 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+        )}
 
       </div>
     </div>

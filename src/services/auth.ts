@@ -27,7 +27,7 @@ export const AuthService = {
       .from('logs_ingreso')
       .insert([
         {
-          user_id: userId,
+          perfil_id: userId,
           metodo,
           fecha_hora: new Date().toISOString()
         }

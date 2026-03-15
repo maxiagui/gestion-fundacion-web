@@ -15,6 +15,8 @@ export default function Socios() {
   const [socios, setSocios] = useState<Socio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
   
   // ABM Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -140,6 +142,26 @@ export default function Socios() {
     (s.dni && s.dni.includes(searchTerm))
   );
 
+  const totalPages = Math.ceil(filteredSocios.length / itemsPerPage);
+  const paginatedSocios = filteredSocios.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const handleDeleteSocio = async () => {
+    if (!formData.id_socio) return;
+    if (window.confirm('¿Está seguro que desea eliminar a este socio definitivamente?')) {
+      setIsSubmitting(true);
+      try {
+        await ApiService.deleteSocio(formData.id_socio);
+        setIsModalOpen(false);
+        loadSocios();
+      } catch (error) {
+        console.error(error);
+        alert('Error al eliminar el socio.');
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+  };
+
   const handleSubmitSocio = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -159,67 +181,105 @@ export default function Socios() {
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Gestión de Socios</h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Administración y estado de pagos</p>
         </div>
-        <button 
-          onClick={() => { setFormData({ nombre: '', apellido: '', email: '', telefono: '', estado: 'Activo', plan: 'Mensual' }); setIsModalOpen(true); }}
-          className="btn-primary w-full sm:w-auto justify-center"
-        >
-          <Plus className="w-5 h-5 mr-2" /> Nuevo Socio
-        </button>
+        {perfil?.rol !== 'visita' && (
+          <button 
+            onClick={() => { setFormData({ nombre: '', apellido: '', email: '', telefono: '', estado: 'Activo', plan: 'Mensual' }); setIsModalOpen(true); }}
+            className="btn-primary w-full sm:w-auto justify-center"
+          >
+            <Plus className="w-5 h-5 mr-2" /> Nuevo Socio
+          </button>
+        )}
       </div>
 
       <div className="premium-card !p-0 overflow-hidden flex flex-col shadow-sm w-full">
         <div className="p-4 border-b border-slate-100 dark:border-dark-700 bg-slate-50/50 dark:bg-dark-900/50 flex flex-col sm:flex-row justify-between gap-4">
           <div className="relative w-full sm:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Buscar por nombre o DNI..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="input-field pl-10 w-full" />
+            <input type="text" placeholder="Buscar por nombre o DNI..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }} className="input-field pl-10 w-full" />
           </div>
           <div className="text-sm font-medium text-slate-500 flex items-center justify-end">{filteredSocios.length} asociados encontrados</div>
         </div>
         
         <div className="overflow-x-auto w-full">
-          <table className="w-full text-left border-collapse min-w-[800px]">
+          <table className="w-full text-left border-collapse min-w-full">
             <thead>
               <tr className="bg-slate-50 dark:bg-dark-800 border-b border-slate-200 dark:border-dark-700 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                <th className="p-4">Asociado</th>
-                <th className="p-4">Estado</th>
-                <th className="p-4">Al Día</th>
-                <th className="p-4 text-right">Acciones</th>
+                <th className="p-3 sm:p-4">Asociado</th>
+                <th className="p-3 sm:p-4 text-center">Acciones</th>
+                <th className="p-3 sm:p-4 text-center">Al Día</th>
+                <th className="p-3 sm:p-4 text-center">Estado</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={6} className="p-8 text-center"><div className="skeleton mx-auto h-6 w-32" /></td></tr>
-              ) : filteredSocios.map((s) => (
+                <tr><td colSpan={4} className="p-8 text-center"><div className="skeleton mx-auto h-6 w-32" /></td></tr>
+              ) : paginatedSocios.map((s) => (
                 <tr key={s.id_socio} className="border-b border-slate-100 dark:border-dark-700 hover:bg-slate-50/80 dark:hover:bg-dark-800/80 transition-colors">
-                  <td className="p-4">
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">{s.nombre} {s.apellido}</div>
+                  <td className="p-3 sm:p-4 truncate max-w-[150px] sm:max-w-none">
+                    <div className="font-semibold text-slate-800 dark:text-slate-200 truncate" title={`${s.nombre} ${s.apellido}`}>{s.nombre} {s.apellido}</div>
                   </td>
-                  <td className="p-4">
-                    <span className={`px-2.5 py-1 ${s.estado === 'Activo' || s.estado === 'Vitalicio' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'} rounded-lg text-xs font-semibold whitespace-nowrap`}>
-                      {s.estado}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    {isSocioAlDia(s) ? 
-                      <span className="flex items-center text-emerald-600 dark:text-emerald-400 font-medium text-sm whitespace-nowrap"><UserCheck className="w-4 h-4 mr-1"/> Sí</span> : 
-                      <span className="flex items-center text-red-600 dark:text-red-400 font-medium text-sm whitespace-nowrap"><UserX className="w-4 h-4 mr-1"/> No</span>
-                    }
-                  </td>
-                  <td className="p-4 text-right flex justify-end gap-2">
-                    <button onClick={() => openPagosModal(s)} className="btn-primary py-1.5 px-3 shadow-sm text-xs font-semibold h-auto">
+                  <td className="p-3 sm:p-4 flex flex-col sm:flex-row justify-center items-center gap-1 sm:gap-2">
+                    <button onClick={() => openPagosModal(s)} className="btn-primary py-1 px-2 sm:py-1.5 sm:px-3 text-[10px] sm:text-xs min-h-0 min-w-16">
                       {perfil?.rol === 'visita' ? 'Info' : 'Pagos'}
                     </button>
                     {perfil?.rol !== 'visita' && (
-                      <button onClick={() => { setFormData(s); setIsModalOpen(true); }} className="btn-secondary py-1.5 px-3 shadow-sm text-xs font-semibold h-auto">
+                      <button onClick={() => { setFormData(s); setIsModalOpen(true); }} className="btn-secondary py-1 px-2 sm:py-1.5 sm:px-3 text-[10px] sm:text-xs min-h-0 min-w-16">
                         Editar
                       </button>
                     )}
+                  </td>
+                  <td className="p-3 sm:p-4 text-center">
+                    {isSocioAlDia(s) ? 
+                      <span className="inline-flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-medium text-xs sm:text-sm"><UserCheck className="w-3 h-3 sm:w-4 sm:h-4 mr-0.5 sm:mr-1"/> Sí</span> : 
+                      <span className="inline-flex items-center justify-center text-red-600 dark:text-red-400 font-medium text-xs sm:text-sm"><UserX className="w-3 h-3 sm:w-4 sm:h-4 mr-0.5 sm:mr-1"/> No</span>
+                    }
+                  </td>
+                  <td className="p-3 sm:p-4 text-center">
+                    <span className={`px-1.5 sm:px-2.5 py-0.5 sm:py-1 ${s.estado === 'Activo' || s.estado === 'Vitalicio' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' : 'bg-red-100 text-red-700 dark:bg-red-900/30'} rounded-lg text-[10px] sm:text-xs font-semibold whitespace-nowrap`}>
+                      {s.estado}
+                    </span>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        
+        {totalPages > 1 && (
+          <div className="p-4 border-t border-slate-100 dark:border-dark-700 bg-slate-50/50 dark:bg-dark-900/50 flex flex-wrap justify-center items-center gap-2">
+            <button 
+              disabled={currentPage === 1} 
+              onClick={() => setCurrentPage(1)} 
+              className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Primero
+            </button>
+            <button 
+              disabled={currentPage === 1} 
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} 
+              className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Anterior
+            </button>
+            <span className="px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300">
+              Página {currentPage} de {totalPages}
+            </span>
+            <button 
+              disabled={currentPage === totalPages} 
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} 
+              className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Siguiente
+            </button>
+            <button 
+              disabled={currentPage === totalPages} 
+              onClick={() => setCurrentPage(totalPages)} 
+              className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Último
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ABM Socio Modal */}
@@ -237,15 +297,16 @@ export default function Socios() {
                 <input type="email" placeholder="Email" className="input-field w-full" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
                 <input type="text" placeholder="Teléfono" className="input-field w-full" value={formData.telefono || ''} onChange={e => setFormData({...formData, telefono: e.target.value})} />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <select className="input-field w-full" value={formData.estado} onChange={e => setFormData({...formData, estado: e.target.value as EstadoSocio})}>
-                  <option value="Activo">Activo</option><option value="Inactivo">Inactivo</option><option value="Vitalicio">Vitalicio</option><option value="Suspendido">Suspendido</option><option value="Baja">Baja</option>
-                </select>
-                <select className="input-field w-full" value={formData.plan} onChange={e => setFormData({...formData, plan: e.target.value as TipoPlan})}>
-                  <option value="Mensual">Mensual ($7.000)</option><option value="Semestral">Semestral ($25.000)</option><option value="Anual">Anual ($50.000)</option>
+                  <option value="Activo">Activo</option><option value="Inactivo">Inactivo</option><option value="Vitalicio">Vitalicio</option><option value="Suspendido">Suspendido</option>
+                  {formData.estado === 'Baja' && <option value="Baja">Baja</option>}
                 </select>
               </div>
               <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t w-full">
+                {perfil?.rol === 'admin' && formData.id_socio && (
+                  <button type="button" onClick={handleDeleteSocio} className="btn-secondary w-full sm:w-auto justify-center text-red-600 border-red-200 hover:bg-red-50 mr-auto">Eliminar Socio</button>
+                )}
                 <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary w-full sm:w-auto justify-center">Cancelar</button>
                 <button type="submit" disabled={isSubmitting} className="btn-primary w-full sm:w-auto justify-center">{isSubmitting ? 'Guardando...' : 'Guardar'}</button>
               </div>
@@ -312,17 +373,24 @@ export default function Socios() {
                     <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-4 flex items-center text-sm">
                       <History className="w-4 h-4 mr-2" /> Historial de Pagos
                     </h3>
-                    {isLoadingPagos ? <div className="skeleton w-full h-8" /> : sociosPagos.length === 0 ? (
-                      <p className="text-sm text-slate-400 text-center mt-4">No hay pagos registrados.</p>
+                    {isLoadingPagos ? (
+                      <div className="flex flex-col gap-2">
+                        <div className="skeleton w-full h-10 rounded-xl" />
+                        <div className="skeleton w-full h-10 rounded-xl" />
+                      </div>
+                    ) : sociosPagos.length === 0 ? (
+                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-6 bg-slate-50 dark:bg-dark-900 border border-slate-100 dark:border-dark-700 border-dashed rounded-xl">
+                        No hay pagos registrados.
+                      </div>
                     ) : (
                       <div className="space-y-3">
                         {sociosPagos.map(p => (
                           <div key={p.id_pago} className="p-3 bg-white dark:bg-dark-800 rounded-xl border border-slate-100 dark:border-dark-700 shadow-sm flex justify-between items-center text-sm gap-2">
                             <div className="truncate">
                               <div className="font-semibold text-slate-700 dark:text-slate-300 truncate">${p.monto.toLocaleString()}</div>
-                              <div className="text-xs text-slate-500 dark:text-slate-400">{new Date(p.fecha_transaccion).toLocaleDateString()}</div>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">{new Date(p.fecha_pago).toLocaleDateString()}</div>
                             </div>
-                            <span className="px-2 py-1 bg-slate-100 dark:bg-dark-900/50 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-dark-600 rounded text-xs font-semibold flex-shrink-0">{p.tipo_pago}</span>
+                            <span className="px-2 py-1 bg-slate-100 dark:bg-dark-900/50 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-dark-600 rounded text-xs font-semibold flex-shrink-0">{p.plan}</span>
                           </div>
                         ))}
                       </div>

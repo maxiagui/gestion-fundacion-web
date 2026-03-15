@@ -17,12 +17,20 @@ export interface Socio {
   plan?: TipoPlan | string; // Computed or keeping as 'Mensual' by default since it isn't in DB fetch
 }
 
+export interface Perfil {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  rol: 'admin' | 'operador' | 'visita';
+  email: string | null;
+}
+
 export interface Pago {
   id_pago: number;
-  socio_id: number;
+  id_socio: number;
   monto: number;
-  tipo_pago: TipoPlan | string;
-  fecha_transaccion: string;
+  plan: TipoPlan | string;
+  fecha_pago: string;
   inicio_cobertura: string;
   fin_cobertura: string;
 }
@@ -46,39 +54,31 @@ export function calcularNuevaCobertura(
   fechaPagoStr: string,
   coberturaActualFinStr: string | null
 ): { inicio: Date; fin: Date } {
-  const fechaPago = new Date(fechaPagoStr);
-  const coberturaActualFin = coberturaActualFinStr ? new Date(coberturaActualFinStr) : null;
+  // Parse without timezone issues by grabbing the year directly from the string YYYY-MM-DD
+  const paymentYear = parseInt(fechaPagoStr.split('-')[0], 10);
+  const coberturaActualFin = coberturaActualFinStr ? new Date(coberturaActualFinStr + 'T12:00:00Z') : null;
   
-  // Base calculation starts from either today/fecha_pago or the end of the current coverage (if active)
-  const isCurrentlyCovered = coberturaActualFin && coberturaActualFin > fechaPago;
-  const baseDate = isCurrentlyCovered ? coberturaActualFin : fechaPago;
+  let baseDate: Date;
+  
+  if (coberturaActualFin) {
+    if (coberturaActualFin.getUTCFullYear() < paymentYear) {
+      // Si el año de su última cobertura es anterior al año de pago, empezamos a cobrarle desde Enero de este año
+      baseDate = new Date(`${paymentYear}-01-01T12:00:00Z`);
+    } else {
+      // Su cobertura actual cubre parte o todo este año (o años futuros), entonces continuamos desde ahí
+      baseDate = coberturaActualFin;
+    }
+  } else {
+    // Si nunca pagó o no tiene cobertura previa, empezamos desde Enero del año actual (1 de Enero)
+    baseDate = new Date(`${paymentYear}-01-01T12:00:00Z`);
+  }
 
   if (tipoPlan === 'Mensual') {
-    // 1 mes calendario desde la base
-    const inicio = isCurrentlyCovered ? new Date(baseDate) : new Date(baseDate);
-    return { inicio, fin: addMonths(inicio, 1) };
+    return { inicio: baseDate, fin: addMonths(baseDate, 1) };
   } else if (tipoPlan === 'Semestral') {
-    if (!isCurrentlyCovered) {
-       // Si no hay pagos en el año, cubre de enero a junio del año de pago
-       const targetYear = baseDate.getFullYear();
-       const inicio = new Date(targetYear, 0, 1);
-       const fin = new Date(targetYear, 5, 30); // 30 Jun
-       return { inicio, fin };
-    } else {
-       const targetYear = baseDate.getFullYear();
-       let fin = addMonths(baseDate, 6);
-       const endOfYearDate = new Date(targetYear, 11, 31);
-       if (fin > endOfYearDate) {
-           fin = endOfYearDate;
-       }
-       return { inicio: baseDate, fin };
-    }
+    return { inicio: baseDate, fin: addMonths(baseDate, 6) };
   } else { // Anual
-    // Desde el 1 de Enero al 31 de Diciembre del año actual (o siguiente si ya está cubierto este año)
-    const targetYear = isCurrentlyCovered ? baseDate.getFullYear() + 1 : baseDate.getFullYear();
-    const inicio = startOfYear(new Date(targetYear, 0, 1));
-    const fin = endOfYear(new Date(targetYear, 0, 1));
-    return { inicio, fin };
+    return { inicio: baseDate, fin: addMonths(baseDate, 12) };
   }
 }
 
@@ -107,9 +107,10 @@ export const ApiService = {
   },
 
   async createSocio(socioData: Omit<Socio, 'id' | 'created_at'>): Promise<Socio> {
+    const { plan, ...dbData } = socioData as any;
     const { data, error } = await supabase
       .from('socios')
-      .insert([socioData])
+      .insert([dbData])
       .select()
       .single();
     
@@ -118,9 +119,10 @@ export const ApiService = {
   },
 
   async updateSocio(id_socio: number, updates: Partial<Socio>): Promise<Socio> {
+    const { plan, ...dbData } = updates as any;
     const { data, error } = await supabase
       .from('socios')
-      .update(updates)
+      .update(dbData)
       .eq('id_socio', id_socio)
       .select()
       .single();
@@ -129,11 +131,20 @@ export const ApiService = {
     return data as Socio;
   },
 
+  async deleteSocio(id_socio: number): Promise<void> {
+    const { error } = await supabase
+      .from('socios')
+      .delete()
+      .eq('id_socio', id_socio);
+    
+    if (error) throw error;
+  },
+
   async getPagos(): Promise<Pago[]> {
     const { data, error } = await supabase
       .from('pagos')
       .select('*')
-      .order('fecha_transaccion', { ascending: false });
+      .order('fecha_pago', { ascending: false });
     
     if (error) throw error;
     return data as Pago[];
@@ -143,8 +154,8 @@ export const ApiService = {
     const { data, error } = await supabase
       .from('pagos')
       .select('*')
-      .eq('socio_id', socioId)
-      .order('fecha_transaccion', { ascending: false });
+      .eq('id_socio', socioId)
+      .order('fecha_pago', { ascending: false });
     
     if (error) throw error;
     return data as Pago[];
@@ -163,10 +174,10 @@ export const ApiService = {
     const monto = VALORES_CUOTA[tipoPlan];
 
     const pagoData = {
-      socio_id: socioId,
+      id_socio: socioId,
       monto,
-      tipo_pago: tipoPlan.toLowerCase(),
-      fecha_transaccion: fechaPago + 'T12:00:00Z', 
+      plan: tipoPlan,
+      fecha_pago: fechaPago + 'T12:00:00Z', 
       inicio_cobertura: inicio.toISOString().split('T')[0],
       fin_cobertura: fin.toISOString().split('T')[0]
     };
@@ -191,5 +202,38 @@ export const ApiService = {
     if (updateError) throw updateError;
 
     return newPago as Pago;
+  },
+
+  async deletePago(id_pago: number): Promise<void> {
+    const { error } = await supabase
+      .from('pagos')
+      .delete()
+      .eq('id_pago', id_pago);
+    if (error) throw error;
+  },
+
+  async getPerfiles(): Promise<Perfil[]> {
+    const { data, error } = await supabase
+      .from('perfiles')
+      .select('*')
+      .order('full_name', { ascending: true });
+    if (error) throw error;
+    return data as Perfil[];
+  },
+
+  async updatePerfilRol(id: string, rol: 'admin' | 'operador' | 'visita'): Promise<void> {
+    const { error } = await supabase
+      .from('perfiles')
+      .update({ rol })
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  async deletePerfil(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('perfiles')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
   }
 };
