@@ -238,11 +238,37 @@ export const ApiService = {
   },
 
   async deletePago(id_pago: number): Promise<void> {
-    const { error } = await supabase
+    const { data: pago, error: fetchError } = await supabase
+      .from('pagos')
+      .select('id_socio')
+      .eq('id_pago', id_pago)
+      .single();
+    
+    if (fetchError) throw fetchError;
+
+    const { error: deleteError } = await supabase
       .from('pagos')
       .delete()
       .eq('id_pago', id_pago);
-    if (error) throw error;
+      
+    if (deleteError) throw deleteError;
+
+    const { data: pagos, error: pagosError } = await supabase
+      .from('pagos')
+      .select('fin_cobertura')
+      .eq('id_socio', pago.id_socio)
+      .order('fin_cobertura', { ascending: false });
+
+    if (pagosError) throw pagosError;
+
+    const nuevoVencimiento = pagos.length > 0 ? (pagos[0] as any).fin_cobertura : null;
+
+    const { error: updateError } = await supabase
+      .from('socios')
+      .update({ vencimiento_actividad: nuevoVencimiento })
+      .eq('id_socio', pago.id_socio);
+
+    if (updateError) throw updateError;
   },
 
   async getPerfiles(): Promise<Perfil[]> {

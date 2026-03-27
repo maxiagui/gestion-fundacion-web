@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { ArrowLeft, LayoutDashboard, Users, CreditCard, Search, X, Trash2, Plus, AlertTriangle, Shield, RefreshCcw } from 'lucide-react';
 import { ApiService, Socio, Pago, EstadoSocio, TipoPlan, Perfil } from '../services/api';
+import { normalizeSearch } from '../lib/utils';
 
 const DEFAULT_PERMISSIONS = {
   admin: { p1: true, p2: true, p3: true, p4: true, p5: true, p6: true },
@@ -201,7 +202,13 @@ function SociosTab() {
     finally { setIsSubmitting(false); }
   };
 
-  const filtered = socios.filter(s => s.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || s.apellido.toLowerCase().includes(searchTerm.toLowerCase()));
+  const normalizedSearchTerm = searchTerm.length >= 3 ? normalizeSearch(searchTerm) : searchTerm.toLowerCase();
+  const filtered = socios.filter(s => {
+    if (searchTerm.length >= 3) {
+      return normalizeSearch(s.nombre).includes(normalizedSearchTerm) || normalizeSearch(s.apellido).includes(normalizedSearchTerm);
+    }
+    return s.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || s.apellido.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
   return (
     <div className="p-6 flex flex-col h-full">
@@ -457,7 +464,8 @@ function PagosTab() {
     }
   };
 
-  const filtered = searchTerm.length > 2 ? socios.filter(s => s.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || s.apellido.toLowerCase().includes(searchTerm.toLowerCase())) : [];
+  const normalizedSearchTerm = searchTerm.length > 2 ? normalizeSearch(searchTerm) : "";
+  const filtered = searchTerm.length > 2 ? socios.filter(s => normalizeSearch(s.nombre).includes(normalizedSearchTerm) || normalizeSearch(s.apellido).includes(normalizedSearchTerm)) : [];
 
   return (
     <div className="p-6 flex flex-col md:flex-row gap-8 h-full">
