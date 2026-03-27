@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { AuthService, Perfil } from '../services/auth';
@@ -14,88 +14,118 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
+const INACTIVITY_TIMEOUT = 10 * 60 * 1000; // 10 minutes in milliseconds
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const sessionRef = useRef<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
-  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const resetInactivityTimer = () => {
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-    }
-    
-    // Only set timer if there is an active session
-    if (session) {
-      inactivityTimerRef.current = setTimeout(async () => {
-        console.log('Session expired due to inactivity');
-        await signOut();
-      }, INACTIVITY_TIMEOUT);
-    }
-  };
-
-  const handleInteract = () => {
-    resetInactivityTimer();
-  };
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setSession(null);
-    setUser(null);
-    setPerfil(null);
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-    }
-  };
-
-  const updatePerfilState = (updates: Partial<Perfil>) => {
-    setPerfil(prev => prev ? { ...prev, ...updates } : null);
-  };
+  const lastInteractTime = useRef<number>(Date.now());
 
   useEffect(() => {
-    // Setup activity listeners
-    window.addEventListener('mousemove', handleInteract);
-    window.addEventListener('keydown', handleInteract);
-    window.addEventListener('click', handleInteract);
-    window.addEventListener('scroll', handleInteract);
+    sessionRef.current = session;
+  }, [session]);
+
+  const signOut = useCallback(async () => {
+    try {
+      // Force immediate UI logout so the user isn't trapped if the API is frozen
+      setSession(null);
+      setUser(null);
+      setPerfil(null);
+      
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Sign out API timeout')), 3000)
+      );
+      
+      await Promise.race([
+        supabase.auth.signOut(),
+        timeoutPromise
+      ]);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  }, []);
+
+  const updatePerfilState = useCallback((updates: Partial<Perfil>) => {
+    setPerfil(prev => prev ? { ...prev, ...updates } : null);
+  }, []);
+
+  useEffect(() => {
+    // Only update the time reference on user interaction
+    const handleInteract = () => {
+      lastInteractTime.current = Date.now();
+    };
+
+    // A single interval that checks every 30 seconds if the session has expired
+    const intervalId = setInterval(() => {
+      if (!sessionRef.current) return;
+      
+      const timeSinceLastAction = Date.now() - lastInteractTime.current;
+      if (timeSinceLastAction >= INACTIVITY_TIMEOUT) {
+        console.log(`Session expired due to inactivity (${INACTIVITY_TIMEOUT / 60000} mins)`);
+        // Reset time immediately so it doesn't trigger repeatedly while logging out
+        lastInteractTime.current = Date.now(); 
+        signOut().catch(console.error);
+      }
+    }, 30000); // 30 seconds polling interval
+
+    const options = { passive: true };
+    window.addEventListener('mousemove', handleInteract, options);
+    window.addEventListener('keydown', handleInteract, options);
+    window.addEventListener('click', handleInteract, options);
+    window.addEventListener('scroll', handleInteract, options);
 
     return () => {
+      clearInterval(intervalId);
       window.removeEventListener('mousemove', handleInteract);
       window.removeEventListener('keydown', handleInteract);
       window.removeEventListener('click', handleInteract);
       window.removeEventListener('scroll', handleInteract);
-      if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-      }
     };
-  }, [session]);
+  }, [signOut]);
 
   useEffect(() => {
     let mounted = true;
+    let safetyTimeout: NodeJS.Timeout;
 
     async function getInitialSession() {
       try {
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         
-        if (mounted) {
-          if (initialSession) {
-            setSession(initialSession);
-            setUser(initialSession.user);
-            const userProfile = await AuthService.getPerfil(initialSession.user.id);
+        if (error) {
+           console.error('Error getting initial session:', error);
+        }
+
+        if (mounted && initialSession) {
+          setSession(initialSession);
+          sessionRef.current = initialSession;
+          setUser(initialSession.user);
+          const userProfile = await AuthService.getPerfil(initialSession.user.id);
+          if (mounted) {
             setPerfil(userProfile);
-            resetInactivityTimer();
           }
-          setIsLoading(false);
         }
       } catch (error) {
-        console.error('Error getting initial session:', error);
-        if (mounted) setIsLoading(false);
+        console.error('Error in getInitialSession catch:', error);
+      } finally {
+        if (mounted) {
+          clearTimeout(safetyTimeout);
+          setIsLoading(false);
+          lastInteractTime.current = Date.now();
+        }
       }
     }
+
+    // Security timeout of 10s to ensure we never get stuck
+    safetyTimeout = setTimeout(() => {
+      if (mounted) {
+        console.warn('Initial session load timeout (10s), forcing loading to false');
+        setIsLoading(false);
+      }
+    }, 10000);
 
     getInitialSession();
 
@@ -103,31 +133,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!mounted) return;
 
       setSession(currentSession);
+      sessionRef.current = currentSession;
       setUser(currentSession?.user ?? null);
 
-      if (event === 'SIGNED_IN' && currentSession) {
-        // Log ingreso
-        const provider = currentSession.user.app_metadata.provider;
-        const method = provider === 'google' ? 'google' : 'password';
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (!currentSession) return;
         
-        // Check if we already logged this session recently to avoid duplicates?
-        // SIGNED_IN can sometimes fire multiple times or on token refresh.
-        // But let's follow the standard pattern:
-        await AuthService.logIngreso(currentSession.user.id, method);
-        
-        const userProfile = await AuthService.getPerfil(currentSession.user.id);
-        setPerfil(userProfile);
-        resetInactivityTimer();
+        try {
+          // Do NOT set isLoading(true) here, as it completely unmounts the app layout and causes freezing/spasms on Alt+Tab 
+          if (event === 'SIGNED_IN') {
+            const provider = currentSession.user.app_metadata.provider;
+            const method = provider === 'google' ? 'google' : 'password';
+            await AuthService.logIngreso(currentSession.user.id, method);
+          }
+          
+          const userProfile = await AuthService.getPerfil(currentSession.user.id);
+          if (mounted) {
+            setPerfil(userProfile);
+            lastInteractTime.current = Date.now();
+          }
+        } catch (error) {
+          console.error('Error handling auth state change:', error);
+        }
       } else if (event === 'SIGNED_OUT') {
-        setPerfil(null);
-        if (inactivityTimerRef.current) {
-          clearTimeout(inactivityTimerRef.current);
+        try {
+          setPerfil(null);
+        } finally {
+          if (mounted) setIsLoading(false);
         }
       }
     });
 
     return () => {
       mounted = false;
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, []);

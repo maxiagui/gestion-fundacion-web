@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ApiService, Socio, Pago, EstadoSocio, TipoPlan, isSocioAlDia, CURRENT_DATE_MOCK, VALORES_CUOTA } from '../services/api';
+import { normalizeSearch } from '../lib/utils';
 import { Search, Plus, UserCheck, UserX, X, Calendar as CalendarIcon, DollarSign, History } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -136,11 +137,18 @@ export default function Socios() {
     return { meses, matrix };
   };
 
-  const filteredSocios = socios.filter(s => 
-    s.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.apellido.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (s.dni && s.dni.includes(searchTerm))
-  );
+  const normalizedSearchTerm = searchTerm.length >= 3 ? normalizeSearch(searchTerm) : searchTerm.toLowerCase();
+
+  const filteredSocios = socios.filter(s => {
+    if (searchTerm.length >= 3) {
+      return normalizeSearch(s.nombre).includes(normalizedSearchTerm) ||
+             normalizeSearch(s.apellido).includes(normalizedSearchTerm) ||
+             (s.dni && s.dni.includes(searchTerm));
+    }
+    return s.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           s.apellido.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           (s.dni && s.dni.includes(searchTerm));
+  });
 
   const totalPages = Math.ceil(filteredSocios.length / itemsPerPage);
   const paginatedSocios = filteredSocios.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
