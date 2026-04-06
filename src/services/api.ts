@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { addMonths, endOfYear, startOfYear, parseISO, isWithinInterval, startOfMonth, endOfMonth } from 'date-fns';
 
-export type EstadoSocio = 'Activo' | 'Inactivo' | 'Vitalicio' | 'Suspendido' | 'Baja';
+export type CaracterSocio = 'activo' | 'inactivo' | 'suspendido' | 'vitalicio' | 'baja';
 export type TipoPlan = 'Mensual' | 'Semestral' | 'Anual';
 
 export interface Socio {
@@ -10,7 +10,12 @@ export interface Socio {
   apellido: string;
   email: string | null;
   telefono: string | null;
-  estado: EstadoSocio | string;
+  caracter: CaracterSocio | string;
+  estado: string;
+  fecha_nacimiento?: string;
+  nacionalidad?: string;
+  domicilio?: string;
+  localidad?: string;
   fecha_ingreso: string;
   vencimiento_actividad: string | null;
   dni?: string; // Appears not to be in the single row fetch, keeping optional
@@ -30,6 +35,8 @@ export interface Pago {
   id_socio: number;
   monto: number;
   plan: TipoPlan | string;
+  medio_pago: 'efectivo' | 'virtual' | string;
+  link_comprobante?: string | null;
   fecha_pago: string;
   inicio_cobertura: string;
   fin_cobertura: string;
@@ -106,8 +113,28 @@ export const ApiService = {
     return data as Socio[];
   },
 
-  async createSocio(socioData: Omit<Socio, 'id' | 'created_at'>): Promise<Socio> {
-    const { plan, ...dbData } = socioData as any;
+  async createSocio(socioData: Omit<Socio, 'id_socio' | 'id' | 'created_at'>): Promise<Socio> {
+    const { plan, ...dbDataRaw } = socioData as any;
+    
+    const dbData = {
+      ...dbDataRaw,
+      nombre: dbDataRaw.nombre?.toLowerCase(),
+      apellido: dbDataRaw.apellido?.toLowerCase(),
+      nacionalidad: dbDataRaw.nacionalidad?.toLowerCase(),
+      domicilio: dbDataRaw.domicilio?.toLowerCase(),
+      localidad: dbDataRaw.localidad?.toLowerCase(),
+      estado: dbDataRaw.estado?.toLowerCase()
+    };
+
+    const { data: maxIdData } = await supabase
+      .from('socios')
+      .select('id_socio')
+      .order('id_socio', { ascending: false })
+      .limit(1);
+    
+    const nextId = maxIdData && maxIdData.length > 0 ? (maxIdData[0].id_socio + 1) : 1;
+    dbData.id_socio = nextId;
+
     const { data, error } = await supabase
       .from('socios')
       .insert([dbData])
@@ -119,7 +146,16 @@ export const ApiService = {
   },
 
   async updateSocio(id_socio: number, updates: Partial<Socio>): Promise<Socio> {
-    const { plan, ...dbData } = updates as any;
+    const { plan, ...dbDataRaw } = updates as any;
+    
+    const dbData = { ...dbDataRaw };
+    if (dbData.nombre) dbData.nombre = dbData.nombre.toLowerCase();
+    if (dbData.apellido) dbData.apellido = dbData.apellido.toLowerCase();
+    if (dbData.nacionalidad) dbData.nacionalidad = dbData.nacionalidad.toLowerCase();
+    if (dbData.domicilio) dbData.domicilio = dbData.domicilio.toLowerCase();
+    if (dbData.localidad) dbData.localidad = dbData.localidad.toLowerCase();
+    if (dbData.estado) dbData.estado = dbData.estado.toLowerCase();
+
     const { data, error } = await supabase
       .from('socios')
       .update(dbData)
@@ -161,7 +197,7 @@ export const ApiService = {
     return data as Pago[];
   },
 
-  async registerPago(socioId: number, tipoPlan: TipoPlan, _fechaPago: string): Promise<Pago> {
+  async registerPago(socioId: number, tipoPlan: TipoPlan, _fechaPago: string, medioPago: string = 'efectivo', linkComprobante: string | null = null): Promise<Pago> {
     // 1. Obtener la fecha de fin_cobertura más lejana en el año 2026
     const { data: pagos, error: pagosError } = await supabase
       .from('pagos')
@@ -210,10 +246,22 @@ export const ApiService = {
     const fechaPagoExacta = new Date().toISOString();
     const monto = VALORES_CUOTA[tipoPlan];
 
+    const { data: maxPagoData, error: maxPagoErr } = await supabase
+      .from('pagos')
+      .select('id_pago')
+      .order('id_pago', { ascending: false })
+      .limit(1);
+
+    if (maxPagoErr) throw maxPagoErr;
+    const nextIdPago = maxPagoData && maxPagoData.length > 0 ? (maxPagoData[0].id_pago + 1) : 1;
+
     const pagoData = {
+      id_pago: nextIdPago,
       id_socio: socioId,
       monto,
-      plan: tipoPlan,
+      plan: tipoPlan.toLowerCase(),
+      medio_pago: medioPago,
+      link_comprobante: linkComprobante,
       fecha_pago: fechaPagoExacta,
       inicio_cobertura: inicioCoberturaStr,
       fin_cobertura: finCoberturaStr
@@ -235,6 +283,18 @@ export const ApiService = {
     if (updateError) throw updateError;
 
     return newPago as Pago;
+  },
+
+  async updatePago(idPago: number, data: Partial<Pago>): Promise<Pago> {
+    const { data: updatedPago, error } = await supabase
+      .from('pagos')
+      .update(data)
+      .eq('id_pago', idPago)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return updatedPago as Pago;
   },
 
   async deletePago(id_pago: number): Promise<void> {

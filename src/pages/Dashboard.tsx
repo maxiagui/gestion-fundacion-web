@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, DollarSign, CalendarCheck, TrendingUp, PieChart, AlertTriangle } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { ApiService, Socio, Pago, CURRENT_DATE_MOCK, VALORES_CUOTA, isSocioAlDia } from '../services/api';
+import { toCapitalCase } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -121,34 +123,48 @@ export default function Dashboard() {
   }, [pagos]);
 
   // --- 3. Estado de Pago Mensual ---
-  // Users who paid the current month vs pending (among "Mensual" plan active users)
+  const sociosActivosPendientesCount = useMemo(() => {
+    const firstDayOfCurrentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    return socios.filter(s => {
+      // 1. caracter = 'activo'
+      if (s.caracter?.toLowerCase() !== 'activo') return false;
+      
+      // 2. NO debe tener un pago registrado cuyo fin_cobertura sea mayor o igual al mes actual
+      if (!s.vencimiento_actividad) return true;
+      
+      const vencimiento = new Date(s.vencimiento_actividad + 'T12:00:00Z');
+      return vencimiento < firstDayOfCurrentMonth;
+    }).length;
+  }, [socios]);
+
   const estadoDePagoMensual = useMemo(() => {
-    const currentMonth = CURRENT_DATE_MOCK.getMonth();
-    const currentYear = CURRENT_DATE_MOCK.getFullYear();
-    
-    // In DB we don't naturally have 'plan' guaranteed. We'll fallback to 'Mensual' for analysis or consider all
-    const monthlySocios = socios.filter(s => (s.estado === 'Activo' || s.estado === 'Suspendido') && (s.plan === 'Mensual' || !s.plan));
-    const totalMonthly = monthlySocios.length;
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59);
 
-    // Check how many have a payment that covers the current month/year
-    // Based on actual DB structure from tests wait, DB actually has inicio_cobertura and fin_cobertura in pagos
-    // Let's rely strictly on the `fecha_pago` month for the monthly dashboard simplicity or `inicio_cobertura`
-    const paidByMonthly = pagos.filter(p => p.plan?.toLowerCase() === 'mensual' && new Date(p.fecha_pago).getMonth() === currentMonth && new Date(p.fecha_pago).getFullYear() === currentYear);
-    const uniquePaidIds = new Set(paidByMonthly.map(p => p.id_socio));
+    // Numerador: Pagos realizados en el mes corriente
+    const pagosMesActual = pagos.filter(p => {
+      const pDate = new Date(p.fecha_pago);
+      return pDate >= firstDay && pDate <= lastDay;
+    });
     
-    const pagados = uniquePaidIds.size;
-    const pendientes = totalMonthly - pagados;
-
-    return { total: totalMonthly, pagados, pendientes, porcentaje: totalMonthly ? Math.round((pagados / totalMonthly) * 100) : 0 };
-  }, [socios, pagos]);
+    const pagados = pagosMesActual.length;
+    // Denominador: Universo Esperado = Pagos + Pendientes
+    const totalEsperado = pagados + sociosActivosPendientesCount;
+    
+    return {
+      total: totalEsperado,
+      pagados,
+      pendientes: sociosActivosPendientesCount,
+      porcentaje: totalEsperado > 0 ? Math.round((pagados / totalEsperado) * 100) : 0
+    };
+  }, [pagos, sociosActivosPendientesCount]);
 
   // --- 4. Proyección Mensual ---
-  // Estimated next month revenue based on monthly socios + semiannual/annual that renew next month
   const proyeccionMensual = useMemo(() => {
-    // Basic projection: assume all active monthly users renew next month
-    const activeMonthly = socios.filter(s => s.estado === 'Activo' && (s.plan === 'Mensual' || !s.plan)).length;
-    return activeMonthly * VALORES_CUOTA['Mensual'];
-  }, [socios]);
+    // Calculo: Total = (Socios_Activos_Pendientes * 7000)
+    return sociosActivosPendientesCount * VALORES_CUOTA['Mensual'];
+  }, [sociosActivosPendientesCount]);
 
   // --- 5. Mix de Planes ---
   const mixData = useMemo(() => {
@@ -169,16 +185,24 @@ export default function Dashboard() {
 
   // --- 6. Morosidad Crítica ---
   const morosidadCritica = useMemo(() => {
-    const thresholdDate = new Date(CURRENT_DATE_MOCK);
+    const today = new Date();
+    const thresholdDate = new Date(today);
     thresholdDate.setDate(thresholdDate.getDate() - 60);
 
     return socios.filter(s => {
-      if (s.estado !== 'Activo') return false;
-      if (!s.vencimiento_actividad) return true; // Activo pero nunca pagó? Crítico
-      const finDate = new Date(s.vencimiento_actividad);
+      if (s.caracter?.toLowerCase() !== 'activo') return false;
+
+      const socioPagos = pagos.filter(p => p.id_socio === s.id_socio);
+      const latestFinCobertura = socioPagos.length > 0
+        ? socioPagos.reduce((max, p) => p.fin_cobertura && p.fin_cobertura > max ? p.fin_cobertura : max, socioPagos[0].fin_cobertura || '')
+        : s.vencimiento_actividad;
+
+      if (!latestFinCobertura) return true; // Activo pero nunca pagó? Crítico
+
+      const finDate = new Date(latestFinCobertura + 'T12:00:00Z');
       return finDate < thresholdDate;
     });
-  }, [socios]);
+  }, [socios, pagos]);
 
 
   if (error) {
@@ -311,46 +335,28 @@ export default function Dashboard() {
 
         {/* Panel 6: Morosidad Crítica */}
         {permissions.p6 && (
-        <div className="premium-card flex flex-col border-red-100 dark:border-red-900/30 w-full overflow-hidden">
-          <div className="flex items-center justify-between mb-4 relative z-10">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 rounded-xl flex-shrink-0">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <h3 className="font-semibold text-slate-700 dark:text-slate-200 truncate pr-2">Morosidad (&gt;60d)</h3>
+        <div className="premium-card relative overflow-hidden group w-full">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <AlertTriangle className="w-24 h-24 text-red-500" />
+          </div>
+          <div className="flex items-center gap-4 mb-4 relative z-10">
+            <div className="p-3 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 rounded-xl">
+              <AlertTriangle className="w-6 h-6" />
             </div>
-            {!isLoading && (
-              <span className="px-3 py-1 bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 font-bold rounded-full text-sm flex-shrink-0">
-                {morosidadCritica.length}
-              </span>
-            )}
+            <h3 className="font-semibold text-slate-700 dark:text-slate-200">Morosidad (&gt;60d)</h3>
           </div>
-          <div className="flex-1 overflow-y-auto max-h-[160px] pr-2 custom-scrollbar relative z-10">
-            {isLoading ? (
-              <div className="space-y-2">
-                <div className="skeleton h-12 w-full"></div>
-                <div className="skeleton h-12 w-full"></div>
-              </div>
-            ) : morosidadCritica.length > 0 ? (
-              <ul className="space-y-2">
-                {morosidadCritica.map((s) => (
-                  <li key={s.id_socio} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 bg-slate-50 dark:bg-dark-900/50 rounded-xl border border-slate-100 dark:border-dark-700/50 hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors gap-2">
-                    <div className="truncate">
-                      <div className="font-medium text-slate-800 dark:text-slate-200 text-sm truncate">{s.nombre} {s.apellido}</div>
-                      <div className="text-xs text-slate-500">Plan: {s.plan || 'Mensual'}</div>
-                    </div>
-                    <div className="text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded w-fit sm:w-auto">
-                      Venció: {s.vencimiento_actividad ? new Date(s.vencimiento_actividad).toLocaleDateString() : 'Nunca'}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="h-full flex items-center justify-center text-slate-400 text-sm">
-                Ningún socio crítico.
-              </div>
-            )}
-          </div>
+          {isLoading ? <div className="skeleton h-10 w-24 relative z-10"></div> : (
+            <div className="relative z-10">
+              <div className="text-4xl font-bold text-red-600 dark:text-red-400">{morosidadCritica.length}</div>
+              {morosidadCritica.length > 0 ? (
+                <Link to="/socios?al_dia=no" className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 mt-2 inline-block transition-colors">
+                  Ver en sección Socios &rarr;
+                </Link>
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Ningún socio crítico.</p>
+              )}
+            </div>
+          )}
         </div>
         )}
 

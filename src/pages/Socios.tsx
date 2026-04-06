@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ApiService, Socio, Pago, EstadoSocio, TipoPlan, isSocioAlDia, CURRENT_DATE_MOCK, VALORES_CUOTA } from '../services/api';
-import { normalizeSearch } from '../lib/utils';
-import { Search, Plus, UserCheck, UserX, X, Calendar as CalendarIcon, DollarSign, History } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { ApiService, Socio, Pago, CaracterSocio, TipoPlan, isSocioAlDia, CURRENT_DATE_MOCK, VALORES_CUOTA } from '../services/api';
+import { normalizeSearch, toCapitalCase, LOCALIDADES } from '../lib/utils';
+import { Search, Plus, UserCheck, UserX, X, Calendar as CalendarIcon, DollarSign, History, Smartphone, ArrowUp, ArrowDown } from 'lucide-react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -16,13 +16,18 @@ export default function Socios() {
   const [socios, setSocios] = useState<Socio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterAlDia, setFilterAlDia] = useState<'Todos'|'Si'|'No'>('Todos');
+  const [sortColumn, setSortColumn] = useState<'id_socio' | 'nombre'>('id_socio');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
+
+  const [searchParams] = useSearchParams();
   
   // ABM Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Socio>>({
-    nombre: '', apellido: '', email: '', telefono: '', estado: 'Activo', plan: 'Mensual'
+    nombre: '', apellido: '', email: '', telefono: '', caracter: 'activo', estado: '', plan: 'Mensual', fecha_nacimiento: '', nacionalidad: 'Argentina', domicilio: '', localidad: '', fecha_ingreso: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -31,14 +36,19 @@ export default function Socios() {
   const [sociosPagos, setSociosPagos] = useState<Pago[]>([]);
   const [isLoadingPagos, setIsLoadingPagos] = useState(false);
   const [nuevoPagoPlan, setNuevoPagoPlan] = useState<TipoPlan | string>('Mensual');
+  const [nuevoPagoMedio, setNuevoPagoMedio] = useState<'efectivo' | 'virtual'>('efectivo');
+  const [nuevoPagoLink, setNuevoPagoLink] = useState<string>('');
+  const [isComprobanteModalOpen, setIsComprobanteModalOpen] = useState(false);
+  const [comprobanteUrl, setComprobanteUrl] = useState<string | null>(null);
   const [isRegisteringPago, setIsRegisteringPago] = useState(false);
 
   const location = useLocation();
 
   useEffect(() => {
     if (location.pathname === '/socios/nuevo') setIsModalOpen(true);
+    if (searchParams.get('al_dia') === 'no') setFilterAlDia('No');
     loadSocios();
-  }, [location.pathname]);
+  }, [location.pathname, searchParams]);
 
   async function loadSocios() {
     setIsLoading(true);
@@ -86,7 +96,10 @@ export default function Socios() {
     try {
       // Register payment mocked to today (CURRENT_DATE_MOCK)
       const fechaPagoStr = CURRENT_DATE_MOCK.toISOString().split('T')[0];
-      await ApiService.registerPago(pagosModalSocio.id_socio, nuevoPagoPlan as TipoPlan, fechaPagoStr);
+      await ApiService.registerPago(pagosModalSocio.id_socio, nuevoPagoPlan as TipoPlan, fechaPagoStr, nuevoPagoMedio, nuevoPagoMedio === 'virtual' ? nuevoPagoLink : null);
+      
+      setNuevoPagoLink('');
+      setNuevoPagoMedio('efectivo');
       
       // Reload everything to reflect new end dates
       await loadSocios();
@@ -106,53 +119,96 @@ export default function Socios() {
   };
 
   // Helper calculating coverage matrix for 2026
-  const getGrillaMeses = (socio: Socio): { meses: string[]; matrix: boolean[] } => {
+  const getGrillaMeses = (socio: Socio): { meses: string[]; matrix: ('inactivo'|'cubierto'|'pendiente')[] } => {
     const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    const matrix = new Array(12).fill(false);
+    const matrix = new Array(12).fill('pendiente' as const);
     
-    // We check month by month for Year 2026.
-    // A month is marked green if its start date is within coverages or starting a new coverage span
-    const start2026 = new Date('2026-01-01T00:00:00');
-    // For simplicity, if they have an active coverage span that covers the 15th of that month, we mark it green
-    
-    // We determine this just by the socio's global range for this simple simulation, or 
-    // strictly by the pagos to be perfectly robust.
-    // Let's use the socio's total coverage limits for now as it's continuous
-    if (socio.estado === 'Vitalicio') return { meses, matrix: new Array(12).fill(true) };
-    
-    if (socio.vencimiento_actividad) {
-      // Usar 2026-01-01 como inicio base estático para los pagos del año 2026
-      const start = new Date('2026-01-01T00:00:00Z');
-      const end = new Date(socio.vencimiento_actividad + 'T23:59:59Z');
-      
-      meses.forEach((_, index) => {
-        // mid of the month
-        const targetDate = new Date(Date.UTC(2026, index, 15));
-        if (targetDate >= start && targetDate <= end) {
-          matrix[index] = true;
-        }
-      });
+    if (socio.estado === 'Vitalicio' || socio.caracter === 'vitalicio') {
+      return { meses, matrix: new Array(12).fill('cubierto' as const) };
     }
 
-    // Additionally, color specific manual bounds if needed, but socio's own date range usually encompasses the contiguous payments
+    const derivedVencimiento = sociosPagos.length > 0 
+      ? sociosPagos.reduce((max, p) => p.fin_cobertura && p.fin_cobertura > max ? p.fin_cobertura : max, sociosPagos[0].fin_cobertura || '') 
+      : socio.vencimiento_actividad;
+    
+    // Si no hay fecha de ingreso, asumimos principio de año
+    const start = socio.fecha_ingreso ? new Date(socio.fecha_ingreso + 'T00:00:00Z') : new Date('2026-01-01T00:00:00Z');
+    const startYear = start.getUTCFullYear();
+    const startMonth = startYear < 2026 ? 0 : (startYear > 2026 ? 11 : start.getUTCMonth());
+    
+    if (!derivedVencimiento) {
+       // Sin pagos marcamos todo en base al inicio
+       meses.forEach((_, index) => {
+         matrix[index] = index < startMonth ? 'inactivo' : 'pendiente';
+       });
+       return { meses, matrix };
+    }
+
+    const end = new Date(derivedVencimiento + 'T23:59:59Z');
+    const endYear = end.getUTCFullYear();
+    const endMonth = endYear < 2026 ? 0 : (endYear > 2026 ? 11 : end.getUTCMonth());
+    
+    meses.forEach((_, index) => {
+      if (index < startMonth) {
+        matrix[index] = 'inactivo';
+      } else if (index > endMonth) {
+        matrix[index] = 'pendiente';
+      } else {
+        matrix[index] = 'cubierto';
+      }
+    });
+
     return { meses, matrix };
   };
 
   const normalizedSearchTerm = searchTerm.length >= 3 ? normalizeSearch(searchTerm) : searchTerm.toLowerCase();
 
-  const filteredSocios = socios.filter(s => {
-    if (searchTerm.length >= 3) {
-      return normalizeSearch(s.nombre).includes(normalizedSearchTerm) ||
-             normalizeSearch(s.apellido).includes(normalizedSearchTerm) ||
-             (s.dni && s.dni.includes(searchTerm));
-    }
-    return s.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           s.apellido.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           (s.dni && s.dni.includes(searchTerm));
-  });
+  const filteredAndSortedSocios = useMemo(() => {
+    let result = socios.filter(s => {
+      // 1. Text Search
+      let matchesSearch = true;
+      if (searchTerm.length >= 3) {
+        matchesSearch = normalizeSearch(s.nombre).includes(normalizedSearchTerm) ||
+               normalizeSearch(s.apellido).includes(normalizedSearchTerm) ||
+               (s.dni && s.dni.includes(searchTerm)) ||
+               s.id_socio.toString().includes(searchTerm);
+      } else if (searchTerm.length > 0) {
+        matchesSearch = s.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              s.apellido.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              (s.dni && s.dni.includes(searchTerm)) ||
+              s.id_socio.toString().includes(searchTerm);
+      }
+      
+      if (!matchesSearch) return false;
 
-  const totalPages = Math.ceil(filteredSocios.length / itemsPerPage);
-  const paginatedSocios = filteredSocios.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+      // 2. Al Día Filter
+      if (filterAlDia !== 'Todos') {
+        const alDia = isSocioAlDia(s);
+        if (filterAlDia === 'Si' && !alDia) return false;
+        if (filterAlDia === 'No' && alDia) return false;
+      }
+
+      return true;
+    });
+
+    // 3. Sorting
+    result.sort((a, b) => {
+       if (sortColumn === 'id_socio') {
+         return sortDirection === 'asc' ? a.id_socio - b.id_socio : b.id_socio - a.id_socio;
+       } else {
+         const nameA = `${a.apellido} ${a.nombre}`.toLowerCase();
+         const nameB = `${b.apellido} ${b.nombre}`.toLowerCase();
+         if (nameA < nameB) return sortDirection === 'asc' ? -1 : 1;
+         if (nameA > nameB) return sortDirection === 'asc' ? 1 : -1;
+         return 0;
+       }
+    });
+
+    return result;
+  }, [socios, searchTerm, normalizedSearchTerm, filterAlDia, sortColumn, sortDirection]);
+
+  const totalPages = Math.ceil(filteredAndSortedSocios.length / itemsPerPage);
+  const paginatedSocios = filteredAndSortedSocios.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const handleDeleteSocio = async () => {
     if (!formData.id_socio) return;
@@ -192,7 +248,7 @@ export default function Socios() {
         </div>
         {perfil?.rol !== 'visita' && (
           <button 
-            onClick={() => { setFormData({ nombre: '', apellido: '', email: '', telefono: '', estado: 'Activo', plan: 'Mensual' }); setIsModalOpen(true); }}
+            onClick={() => { setFormData({ nombre: '', apellido: '', email: '', telefono: '', caracter: 'activo', estado: '', plan: 'Mensual', fecha_nacimiento: '', nacionalidad: 'Argentina', domicilio: '', localidad: '', fecha_ingreso: new Date().toISOString().split('T')[0] }); setIsModalOpen(true); }}
             className="btn-primary w-full sm:w-auto justify-center"
           >
             <Plus className="w-5 h-5 mr-2" /> Nuevo Socio
@@ -201,41 +257,78 @@ export default function Socios() {
       </div>
 
       <div className="premium-card !p-0 overflow-hidden flex flex-col shadow-sm w-full">
-        <div className="p-4 border-b border-slate-100 dark:border-dark-700 bg-slate-50/50 dark:bg-dark-900/50 flex flex-col sm:flex-row justify-between gap-4">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Buscar por nombre o DNI..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }} className="input-field pl-10 w-full" />
+        <div className="p-4 border-b border-slate-100 dark:border-dark-700 bg-slate-50/50 dark:bg-dark-900/50 flex flex-col sm:flex-row justify-between gap-4 items-center">
+          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input type="text" placeholder="Buscar por nombre, Nro de Socio o DNI..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }} className="input-field pl-10 w-full" />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">Al Día:</span>
+              <select value={filterAlDia} onChange={e => setFilterAlDia(e.target.value as any)} className="input-field py-1.5 px-3 min-w-[100px]">
+                <option value="Todos">Todos</option>
+                <option value="Si">Sí</option>
+                <option value="No">No</option>
+              </select>
+            </div>
           </div>
-          <div className="text-sm font-medium text-slate-500 flex items-center justify-end">{filteredSocios.length} asociados encontrados</div>
+          <div className="text-sm font-medium text-slate-500 whitespace-nowrap flex items-center">{filteredAndSortedSocios.length} encontrados</div>
         </div>
         
         <div className="overflow-x-auto w-full">
           <table className="w-full text-left border-collapse min-w-full">
             <thead>
               <tr className="bg-slate-50 dark:bg-dark-800 border-b border-slate-200 dark:border-dark-700 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                <th className="p-3 sm:p-4">Asociado</th>
-                <th className="p-3 sm:p-4 text-center">Acciones</th>
-                <th className="p-3 sm:p-4 text-center">Al Día</th>
-                <th className="p-3 sm:p-4 text-center">Estado</th>
+                <th className="p-3 sm:p-4 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-dark-700 transition-colors select-none group w-20 sm:w-28" onClick={() => { setSortColumn('id_socio'); setSortDirection(sortColumn === 'id_socio' && sortDirection === 'asc' ? 'desc' : 'asc') }}>
+                  <div className="flex items-center justify-center gap-1">
+                    Nro. <span className="opacity-0 group-hover:opacity-100 transition-opacity"><ArrowUp className={cn("w-3 h-3", sortColumn === 'id_socio' && sortDirection === 'desc' && "rotate-180")} /></span>
+                  </div>
+                </th>
+                <th className="p-3 sm:p-4 cursor-pointer hover:bg-slate-200 dark:hover:bg-dark-700 transition-colors select-none group" onClick={() => { setSortColumn('nombre'); setSortDirection(sortColumn === 'nombre' && sortDirection === 'asc' ? 'desc' : 'asc') }}>
+                  <div className="flex items-center gap-1">
+                    Asociado <span className="opacity-0 group-hover:opacity-100 transition-opacity"><ArrowUp className={cn("w-3 h-3", sortColumn === 'nombre' && sortDirection === 'desc' && "rotate-180")} /></span>
+                  </div>
+                </th>
+                <th className="p-3 sm:p-4 text-center w-28 sm:w-32">Acciones</th>
+                <th className="p-3 sm:p-4 text-center w-[80px]">Al Día</th>
+                <th className="p-3 sm:p-4 text-center w-[100px]">Carácter</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={4} className="p-8 text-center"><div className="skeleton mx-auto h-6 w-32" /></td></tr>
+                <tr><td colSpan={5} className="p-8 text-center"><div className="skeleton mx-auto h-6 w-32" /></td></tr>
               ) : paginatedSocios.map((s) => (
                 <tr key={s.id_socio} className="border-b border-slate-100 dark:border-dark-700 hover:bg-slate-50/80 dark:hover:bg-dark-800/80 transition-colors">
-                  <td className="p-3 sm:p-4 truncate max-w-[150px] sm:max-w-none">
-                    <div className="font-semibold text-slate-800 dark:text-slate-200 truncate" title={`${s.nombre} ${s.apellido}`}>{s.nombre} {s.apellido}</div>
+                  <td className="p-3 sm:p-4 text-center">
+                    <span className="font-mono text-slate-500 dark:text-slate-400 font-semibold">{s.id_socio}</span>
                   </td>
-                  <td className="p-3 sm:p-4 flex flex-row justify-center items-center gap-1 sm:gap-2">
+                  <td className="p-3 sm:p-4 truncate max-w-[150px] sm:max-w-none">
+                    <div className="font-semibold text-slate-800 dark:text-slate-200 truncate" title={`${toCapitalCase(s.nombre)} ${toCapitalCase(s.apellido)}`}>
+                      {toCapitalCase(s.nombre)} {toCapitalCase(s.apellido)}
+                    </div>
+                  </td>
+                  <td className="p-3 sm:p-4">
+                    <div className="flex flex-row justify-center items-center gap-1 sm:gap-2">
                     <button onClick={() => openPagosModal(s)} className="btn-primary py-1 px-2 sm:py-1.5 sm:px-3 text-xs min-h-0 min-w-16">
                       {perfil?.rol === 'visita' ? 'Info' : 'Pagos'}
                     </button>
                     {perfil?.rol !== 'visita' && (
-                      <button onClick={() => { setFormData(s); setIsModalOpen(true); }} className="btn-secondary py-1 px-2 sm:py-1.5 sm:px-3 text-xs min-h-0 min-w-16">
+                      <button onClick={() => { 
+                        setFormData({
+                          ...s, 
+                          nombre: toCapitalCase(s.nombre), 
+                          apellido: toCapitalCase(s.apellido),
+                          nacionalidad: toCapitalCase(s.nacionalidad),
+                          domicilio: toCapitalCase(s.domicilio),
+                          localidad: toCapitalCase(s.localidad),
+                          estado: toCapitalCase(s.estado)
+                        }); 
+                        setIsModalOpen(true); 
+                      }} className="btn-secondary py-1 px-2 sm:py-1.5 sm:px-3 text-xs min-h-0 min-w-16">
                         Editar
                       </button>
                     )}
+                    </div>
                   </td>
                   <td className="p-3 sm:p-4 text-center">
                     {isSocioAlDia(s) ? 
@@ -244,8 +337,14 @@ export default function Socios() {
                     }
                   </td>
                   <td className="p-3 sm:p-4 text-center">
-                    <span className={`px-2 sm:px-2.5 py-1 ${s.estado === 'Activo' || s.estado === 'Vitalicio' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' : 'bg-red-100 text-red-700 dark:bg-red-900/30'} rounded-lg text-xs font-semibold whitespace-nowrap`}>
-                      {s.estado}
+                    <span className={`px-2 py-1 ${
+                      s.caracter === 'activo' || s.caracter === 'vitalicio' ? 'bg-emerald-100/80 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 
+                      s.caracter === 'inactivo' ? 'bg-slate-100 text-slate-700 dark:bg-dark-700 dark:text-slate-400' :
+                      s.caracter === 'suspendido' ? 'bg-amber-100/80 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                      s.caracter === 'baja' ? 'bg-red-100/80 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                      'bg-slate-100 text-slate-700 dark:bg-dark-700'
+                    } rounded-lg text-xs font-bold whitespace-nowrap`}>
+                      {toCapitalCase(s.caracter) || '-'}
                     </span>
                   </td>
                 </tr>
@@ -294,30 +393,98 @@ export default function Socios() {
       {/* ABM Socio Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white dark:bg-dark-800 rounded-2xl shadow-xl w-full max-w-lg p-6 my-auto">
-            <h2 className="text-xl font-bold mb-4">{formData.id_socio ? 'Editar' : 'Nuevo'} Socio</h2>
-            <form onSubmit={handleSubmitSocio} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input required type="text" placeholder="Nombre" className="input-field" value={formData.nombre || ''} onChange={e => setFormData({...formData, nombre: e.target.value})} />
-                <input required type="text" placeholder="Apellido" className="input-field" value={formData.apellido || ''} onChange={e => setFormData({...formData, apellido: e.target.value})} />
+          <div className="bg-white dark:bg-dark-800 rounded-3xl shadow-2xl w-full max-w-2xl p-6 md:p-8 my-auto relative animate-in zoom-in-95 duration-200">
+            <button type="button" onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-700 rounded-full transition-colors"><X className="w-5 h-5"/></button>
+            <h2 className="text-2xl font-bold mb-6 text-slate-800 dark:text-slate-100">{formData.id_socio ? 'Editar' : 'Alta de'} Socio</h2>
+            <form onSubmit={handleSubmitSocio} className="space-y-6">
+              
+              {/* Identidad */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-dark-700 pb-1">Identidad</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="md:col-span-2">
+                    <input required type="text" placeholder="Nombre" className="input-field w-full" value={formData.nombre || ''} onChange={e => setFormData({...formData, nombre: e.target.value})} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <input required type="text" placeholder="Apellido" className="input-field w-full" value={formData.apellido || ''} onChange={e => setFormData({...formData, apellido: e.target.value})} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <input type="text" placeholder="DNI (Opcional)" className="input-field w-full" value={formData.dni || ''} onChange={e => setFormData({...formData, dni: e.target.value})} />
+                  </div>
+                  <div className="md:col-span-2 relative">
+                    <label className="absolute -top-2 left-2 bg-white dark:bg-dark-800 px-1 text-[10px] text-slate-500 font-semibold">F. Nacimiento</label>
+                    <input type="date" title="Fecha de Nacimiento" className="input-field w-full" value={formData.fecha_nacimiento || ''} onChange={e => setFormData({...formData, fecha_nacimiento: e.target.value})} />
+                  </div>
+                </div>
               </div>
-              <input type="text" placeholder="DNI (Opcional)" className="input-field w-full" value={formData.dni || ''} onChange={e => setFormData({...formData, dni: e.target.value})} />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input type="email" placeholder="Email" className="input-field w-full" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
-                <input type="text" placeholder="Teléfono" className="input-field w-full" value={formData.telefono || ''} onChange={e => setFormData({...formData, telefono: e.target.value})} />
+
+              {/* Contacto */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-dark-700 pb-1">Contacto</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <input type="email" placeholder="Email" className="input-field w-full" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
+                  </div>
+                  <div>
+                    <input type="text" placeholder="Teléfono" className="input-field w-full" value={formData.telefono || ''} onChange={e => setFormData({...formData, telefono: e.target.value})} />
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-1 gap-4">
-                <select className="input-field w-full" value={formData.estado} onChange={e => setFormData({...formData, estado: e.target.value as EstadoSocio})}>
-                  <option value="Activo">Activo</option><option value="Inactivo">Inactivo</option><option value="Vitalicio">Vitalicio</option><option value="Suspendido">Suspendido</option>
-                  {formData.estado === 'Baja' && <option value="Baja">Baja</option>}
-                </select>
+
+              {/* Ubicación */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-dark-700 pb-1">Ubicación</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <input type="text" placeholder="Domicilio" className="input-field w-full" value={formData.domicilio || ''} onChange={e => setFormData({...formData, domicilio: e.target.value})} />
+                  </div>
+                  <div>
+                    <select className="input-field w-full capitalize" value={formData.localidad || ''} onChange={e => setFormData({...formData, localidad: e.target.value})}>
+                      <option value="">Seleccione Localidad...</option>
+                      {LOCALIDADES.map(loc => <option key={loc} value={loc.toLowerCase()}>{loc}</option>)}
+                    </select>
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t w-full">
+
+              {/* Nacionalidad */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-dark-700 pb-1">Nacionalidad</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <input type="text" placeholder="Nacionalidad" className="input-field w-full" value={formData.nacionalidad || ''} onChange={e => setFormData({...formData, nacionalidad: e.target.value})} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Opciones Avanzadas */}
+              <div className="mt-8 bg-amber-50/50 dark:bg-amber-900/10 rounded-2xl p-4 sm:p-5 border border-amber-100 dark:border-amber-900/20 space-y-4">
+                <h4 className="text-sm font-bold text-amber-700 dark:text-amber-500 mb-2 flex items-center gap-2">Opciones Avanzadas</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Estado (Carácter)</label>
+                    <select className="input-field w-full capitalize font-medium bg-white dark:bg-dark-800" value={formData.caracter || 'activo'} onChange={e => setFormData({...formData, caracter: e.target.value as CaracterSocio})}>
+                      <option value="activo">Activo</option><option value="inactivo">Inactivo</option><option value="vitalicio">Vitalicio</option><option value="suspendido">Suspendido</option>
+                      {(formData.caracter === 'baja' || !!formData.id_socio) && <option value="baja">Baja</option>}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Estado Civil / Situación</label>
+                    <input type="text" placeholder="Ej: Soltero, Casado, etc." className="input-field w-full bg-white dark:bg-dark-800" value={formData.estado || ''} onChange={e => setFormData({...formData, estado: e.target.value})} />
+                  </div>
+                  <div className="sm:col-span-3 relative mt-2">
+                     <label className="absolute -top-2 left-3 bg-white dark:bg-dark-800 px-1 text-[10px] text-amber-600 dark:text-amber-500 font-bold z-10">Fecha de Ingreso</label>
+                     <input required type="date" className="input-field w-full bg-white dark:bg-dark-800" value={formData.fecha_ingreso || ''} onChange={e => setFormData({...formData, fecha_ingreso: e.target.value})} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-6 w-full">
                 {perfil?.rol === 'admin' && formData.id_socio && (
-                  <button type="button" onClick={handleDeleteSocio} className="btn-secondary w-full sm:w-auto justify-center text-red-600 border-red-200 hover:bg-red-50 mr-auto">Eliminar Socio</button>
+                  <button type="button" onClick={handleDeleteSocio} className="btn-secondary w-full sm:w-auto justify-center text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300 mr-auto transition-colors">Eliminar Socio</button>
                 )}
                 <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary w-full sm:w-auto justify-center">Cancelar</button>
-                <button type="submit" disabled={isSubmitting} className="btn-primary w-full sm:w-auto justify-center">{isSubmitting ? 'Guardando...' : 'Guardar'}</button>
+                <button type="submit" disabled={isSubmitting} className="btn-primary w-full sm:w-auto justify-center min-w-[140px]">{isSubmitting ? 'Guardando...' : 'Confirmar Cambios'}</button>
               </div>
             </form>
           </div>
@@ -336,7 +503,7 @@ export default function Socios() {
                   Estado de Cuenta 2026
                 </h2>
                 <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm sm:text-base">
-                  {pagosModalSocio.nombre} {pagosModalSocio.apellido}
+                  {toCapitalCase(pagosModalSocio.nombre)} {toCapitalCase(pagosModalSocio.apellido)}
                 </p>
               </div>
               <button onClick={() => setPagosModalSocio(null)} className="p-2 hover:bg-slate-200 dark:hover:bg-dark-700 rounded-full transition-colors flex-shrink-0">
@@ -370,6 +537,23 @@ export default function Socios() {
                               <option value="Anual">Anual (${VALORES_CUOTA.Anual.toLocaleString()})</option>
                             </select>
                           </div>
+                          <div>
+                            <label className="text-xs font-semibold text-slate-500 mb-1 block mt-3">Medio de Pago</label>
+                            <select 
+                              className="input-field shadow-sm w-full font-medium"
+                              value={nuevoPagoMedio}
+                              onChange={(e) => setNuevoPagoMedio(e.target.value as 'efectivo' | 'virtual')}
+                            >
+                              <option value="efectivo">Efectivo</option>
+                              <option value="virtual">Virtual</option>
+                            </select>
+                          </div>
+                          {nuevoPagoMedio === 'virtual' && (
+                            <div>
+                               <label className="text-xs font-semibold text-slate-500 mb-1 block mt-3">Enlace al Comprobante</label>
+                               <input required type="url" placeholder="https://" value={nuevoPagoLink} onChange={e => setNuevoPagoLink(e.target.value)} className="input-field shadow-sm w-full text-sm" />
+                            </div>
+                          )}
                           <button type="submit" disabled={isRegisteringPago || pagosModalSocio.estado === 'Baja'} className="btn-primary w-full shadow-md bg-emerald-600 hover:bg-emerald-700 justify-center">
                             {isRegisteringPago ? 'Procesando...' : 'Confirmar Cobro'}
                           </button>
@@ -394,12 +578,23 @@ export default function Socios() {
                     ) : (
                       <div className="space-y-3">
                         {sociosPagos.map(p => (
-                          <div key={p.id_pago} className="p-3 bg-white dark:bg-dark-800 rounded-xl border border-slate-100 dark:border-dark-700 shadow-sm flex justify-between items-center text-sm gap-2">
-                            <div className="truncate">
-                              <div className="font-semibold text-slate-700 dark:text-slate-300 truncate">${p.monto.toLocaleString()}</div>
-                              <div className="text-xs text-slate-500 dark:text-slate-400">{new Date(p.fecha_pago).toLocaleDateString()}</div>
+                          <div key={p.id_pago} className="p-3 bg-white dark:bg-dark-800 rounded-xl border border-slate-100 dark:border-dark-700 shadow-sm flex items-center justify-between text-sm gap-2">
+                            <div className="flex items-center gap-3 truncate">
+                              <div className="bg-slate-50 dark:bg-dark-900 p-2 rounded-full flex-shrink-0">
+                                {p.medio_pago === 'virtual' ? 
+                                  (p.link_comprobante ? 
+                                    <button onClick={() => { setComprobanteUrl(p.link_comprobante!); setIsComprobanteModalOpen(true); }} className="text-blue-500 hover:text-blue-600 transition-colors" title="Ver comprobante"><Smartphone className="w-4 h-4" /></button> 
+                                    : <Smartphone className="w-4 h-4 text-slate-400" />
+                                  ) 
+                                  : <DollarSign className="w-4 h-4 text-emerald-500" />
+                                }
+                              </div>
+                              <div className="truncate">
+                                <div className="font-semibold text-slate-700 dark:text-slate-300 truncate">${p.monto.toLocaleString()}</div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400">{p.fecha_pago.split('T')[0].split('-').reverse().join('/')} - <span className="capitalize">{p.medio_pago || 'efectivo'}</span></div>
+                              </div>
                             </div>
-                            <span className="px-2 py-1 bg-slate-100 dark:bg-dark-900/50 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-dark-600 rounded text-xs font-semibold flex-shrink-0">{p.plan}</span>
+                            <span className="px-2 py-1 bg-slate-100 dark:bg-dark-900/50 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-dark-600 rounded text-xs font-semibold flex-shrink-0 capitalize">{p.plan}</span>
                           </div>
                         ))}
                       </div>
@@ -428,8 +623,13 @@ export default function Socios() {
                   <div className="text-left sm:text-right">
                     <div className="text-xs font-semibold text-slate-400 mb-1 block">Fin de cobertura</div>
                     <div className="text-slate-800 font-bold">
-                      {pagosModalSocio.estado === 'Vitalicio' ? 'Permanente' : 
-                       pagosModalSocio.vencimiento_actividad ? new Date(pagosModalSocio.vencimiento_actividad).toLocaleDateString() : 'N/A'}
+                      {(() => {
+                        if (pagosModalSocio.estado === 'Vitalicio' || pagosModalSocio.caracter === 'vitalicio') return 'Permanente';
+                        const maxFin = sociosPagos.length > 0 
+                          ? sociosPagos.reduce((max, p) => p.fin_cobertura && p.fin_cobertura > max ? p.fin_cobertura : max, sociosPagos[0].fin_cobertura || '')
+                          : pagosModalSocio.vencimiento_actividad;
+                        return maxFin ? maxFin.split('T')[0].split('-').reverse().join('/') : 'N/A';
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -439,7 +639,7 @@ export default function Socios() {
                   <h3 className="font-bold text-slate-800 mb-4 text-base sm:text-lg">Grilla de Pagos (Meses Cubiertos 2026)</h3>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                     {getGrillaMeses(pagosModalSocio).meses.map((mes: string, index: number) => {
-                      const isCovered = getGrillaMeses(pagosModalSocio).matrix[index];
+                      const state = getGrillaMeses(pagosModalSocio).matrix[index];
                       const isCurrentMonth = CURRENT_DATE_MOCK.getMonth() === index;
                       
                       return (
@@ -447,19 +647,17 @@ export default function Socios() {
                           key={mes} 
                           className={cn(
                             "relative overflow-hidden p-3 sm:p-4 rounded-xl border flex flex-col items-center justify-center transition-all shadow-sm",
-                            isCovered 
-                              ? "bg-emerald-50 border-emerald-200 text-emerald-700" 
-                              : "bg-slate-50 border-slate-200 text-slate-400",
-                            isCurrentMonth && !isCovered && "ring-2 ring-amber-300 ring-offset-2",
-                            isCurrentMonth && isCovered && "ring-2 ring-emerald-400 ring-offset-2"
+                            state === 'cubierto' && "bg-emerald-50 border-emerald-400 text-emerald-700",
+                            state === 'pendiente' && "bg-emerald-50/50 border-emerald-200/50 text-emerald-700/50",
+                            state === 'inactivo' && "bg-red-50/50 border-red-200/50 text-red-700/50",
+                            isCurrentMonth && state !== 'cubierto' && "ring-2 ring-amber-300 ring-offset-2",
+                            isCurrentMonth && state === 'cubierto' && "ring-2 ring-emerald-400 ring-offset-2"
                           )}
                         >
                           <span className="font-bold text-base sm:text-lg mb-1">{mes}</span>
-                          {isCovered ? (
-                            <span className="text-[10px] sm:text-xs bg-emerald-200 text-emerald-800 px-2 rounded-full font-semibold">CUBIERTO</span>
-                          ) : (
-                            <span className="text-[10px] sm:text-xs opacity-50">Pendiente</span>
-                          )}
+                          {state === 'cubierto' && <span className="text-[10px] sm:text-xs bg-emerald-200 text-emerald-800 px-2 rounded-full font-semibold">CUBIERTO</span>}
+                          {state === 'pendiente' && <span className="text-[10px] sm:text-xs opacity-50">Pendiente</span>}
+                          {state === 'inactivo' && <span className="text-[10px] sm:text-xs opacity-50">Inactivo</span>}
                           {isCurrentMonth && (
                             <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Mes Actual"></div>
                           )}
@@ -468,12 +666,39 @@ export default function Socios() {
                     })}
                   </div>
                   <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row items-start sm:items-center justify-start sm:justify-end gap-3 sm:gap-6 text-xs sm:text-sm">
-                    <div className="flex items-center text-slate-500"><div className="w-4 h-4 rounded bg-emerald-100 border border-emerald-200 mr-2"></div> Mes cubierto</div>
-                    <div className="flex items-center text-slate-500"><div className="w-4 h-4 rounded bg-slate-50 border border-slate-200 mr-2"></div> Pendiente</div>
+                    <div className="flex items-center text-slate-800 dark:text-slate-200 font-medium">
+                        <div className="w-4 h-4 rounded bg-emerald-50 border border-emerald-400 mr-2 opacity-100"></div> Mes cubierto
+                    </div>
+                    <div className="flex items-center text-slate-800 dark:text-slate-200 font-medium">
+                        <div className="w-4 h-4 rounded bg-emerald-50 border border-emerald-200 mr-2 opacity-100"></div> Pendiente
+                    </div>
+                    <div className="flex items-center text-slate-800 dark:text-slate-200 font-medium">
+                        <div className="w-4 h-4 rounded bg-red-50 border border-red-300 mr-2 opacity-100"></div> Inactivo
+                    </div>
                   </div>
                 </div>
 
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Comprobante Modal */}
+      {isComprobanteModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm shadow-2xl">
+          <div className="bg-white dark:bg-dark-800 rounded-3xl w-full max-w-lg p-6 relative animate-in zoom-in-95 duration-200 shadow-2xl">
+            <button onClick={() => setIsComprobanteModalOpen(false)} className="absolute top-4 right-4 p-2 hover:bg-slate-100 dark:hover:bg-dark-700 rounded-full transition-colors"><X className="w-5 h-5 text-slate-500"/></button>
+            <h3 className="text-xl font-bold mb-4 flex items-center text-slate-800 dark:text-slate-100">Comprobante de Pago</h3>
+            <div className="w-full flex items-center justify-center bg-slate-50 dark:bg-dark-900 rounded-2xl overflow-hidden min-h-[300px] border border-slate-100 dark:border-dark-700 shadow-inner">
+              {comprobanteUrl ? (
+                <img src={comprobanteUrl} alt="Comprobante" className="max-w-full max-h-[60vh] object-contain rounded-xl" />
+              ) : (
+                <div className="text-slate-400 font-medium flex flex-col items-center gap-2">
+                  <Smartphone className="w-10 h-10 opacity-30" />
+                  <span>Imagen no disponible</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

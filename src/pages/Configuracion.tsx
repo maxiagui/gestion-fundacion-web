@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ArrowLeft, LayoutDashboard, Users, CreditCard, Search, X, Trash2, Plus, AlertTriangle, Shield, RefreshCcw } from 'lucide-react';
-import { ApiService, Socio, Pago, EstadoSocio, TipoPlan, Perfil } from '../services/api';
-import { normalizeSearch } from '../lib/utils';
+import { ArrowLeft, LayoutDashboard, Users, CreditCard, Search, X, Trash2, Plus, AlertTriangle, Shield, RefreshCcw, Edit } from 'lucide-react';
+import { ApiService, Socio, Pago, TipoPlan, Perfil, VALORES_CUOTA } from '../services/api';
+import { normalizeSearch, toCapitalCase, LOCALIDADES } from '../lib/utils';
 
 const DEFAULT_PERMISSIONS = {
   admin: { p1: true, p2: true, p3: true, p4: true, p5: true, p6: true },
@@ -64,7 +64,7 @@ export default function Configuracion() {
             onClick={() => setActiveTab('pagos')}
             className={`flex items-center p-4 rounded-xl font-semibold transition-all ${activeTab === 'pagos' ? 'bg-primary-600 text-white shadow-md' : 'bg-white dark:bg-dark-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-dark-700 border border-slate-100 dark:border-dark-700/50'}`}
           >
-            <CreditCard className="w-5 h-5 mr-3" /> Anular Pagos
+            <CreditCard className="w-5 h-5 mr-3" /> Sección Pagos
           </button>
         </div>
 
@@ -175,7 +175,7 @@ function SociosTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Socio>>({
-    nombre: '', apellido: '', email: '', telefono: '', estado: 'Activo', plan: 'Mensual'
+    nombre: '', apellido: '', email: '', telefono: '', caracter: 'activo', estado: '', plan: 'Mensual', fecha_nacimiento: '', nacionalidad: 'Argentina', domicilio: '', localidad: '', fecha_ingreso: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -217,7 +217,7 @@ function SociosTab() {
           <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Gestión Completa de Socios</h2>
           <p className="text-sm text-slate-500 font-medium">Creación, edición y baja definitiva de socios.</p>
         </div>
-        <button onClick={() => { setFormData({ nombre: '', apellido: '', email: '', telefono: '', estado: 'Activo', plan: 'Mensual' }); setIsModalOpen(true); }} className="btn-primary shrink-0">
+        <button onClick={() => { setFormData({ nombre: '', apellido: '', email: '', telefono: '', caracter: 'activo', estado: '', plan: 'Mensual', fecha_nacimiento: '', nacionalidad: 'Argentina', domicilio: '', localidad: '', fecha_ingreso: new Date().toISOString().split('T')[0] }); setIsModalOpen(true); }} className="btn-primary shrink-0">
           <Plus className="w-5 h-5 mr-2" /> Alta de Socio
         </button>
       </div>
@@ -232,19 +232,40 @@ function SociosTab() {
             <thead>
               <tr className="bg-slate-100 dark:bg-dark-800 border-b border-slate-200 dark:border-dark-700 text-sm font-semibold text-slate-600 dark:text-slate-300">
                 <th className="p-3">Socio</th>
-                <th className="p-3">Estado</th>
-                <th className="p-3">Plan</th>
+                <th className="p-3 text-center">Carácter</th>
                 <th className="p-3 text-right">Acción</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? <tr><td colSpan={4} className="p-4 text-center">Cargando...</td></tr> : filtered.map(s => (
                 <tr key={s.id_socio} className="border-b border-slate-100 dark:border-dark-700 hover:bg-white dark:hover:bg-dark-800">
-                  <td className="p-3 font-medium text-sm">{s.nombre} {s.apellido}</td>
-                  <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${s.estado === 'Baja' ? 'bg-red-200 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>{s.estado}</span></td>
-                  <td className="p-3 text-sm text-slate-500 capitalize">{s.plan || 'Mensual'}</td>
+                  <td className="p-3 font-medium text-sm">
+                    {toCapitalCase(s.nombre)} {toCapitalCase(s.apellido)}
+                  </td>
+                  <td className="p-3 text-center">
+                    <span className={`px-2 py-1 ${
+                      s.caracter === 'activo' || s.caracter === 'vitalicio' ? 'bg-emerald-100/80 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 
+                      s.caracter === 'inactivo' ? 'bg-slate-100 text-slate-700 dark:bg-dark-700 dark:text-slate-400' :
+                      s.caracter === 'suspendido' ? 'bg-amber-100/80 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                      s.caracter === 'baja' ? 'bg-red-100/80 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                      'bg-slate-100 text-slate-700 dark:bg-dark-700'
+                    } rounded-lg text-xs font-bold whitespace-nowrap`}>
+                      {toCapitalCase(s.caracter) || '-'}
+                    </span>
+                  </td>
                   <td className="p-3 text-right">
-                    <button onClick={() => { setFormData(s); setIsModalOpen(true); }} className="text-primary-600 hover:underline text-sm font-semibold">Editar</button>
+                    <button onClick={() => { 
+                      setFormData({
+                        ...s,
+                        nombre: toCapitalCase(s.nombre),
+                        apellido: toCapitalCase(s.apellido),
+                        nacionalidad: toCapitalCase(s.nacionalidad),
+                        domicilio: toCapitalCase(s.domicilio),
+                        localidad: toCapitalCase(s.localidad),
+                        estado: toCapitalCase(s.estado)
+                      }); 
+                      setIsModalOpen(true); 
+                    }} className="text-primary-600 hover:underline text-sm font-semibold">Editar</button>
                   </td>
                 </tr>
               ))}
@@ -254,36 +275,95 @@ function SociosTab() {
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white dark:bg-dark-800 rounded-2xl shadow-xl w-full max-w-lg p-6 my-auto">
-            <h2 className="text-xl font-bold mb-4">{formData.id_socio ? 'Edición Avanzada' : 'Alta de Socio'}</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <input required type="text" placeholder="Nombre" className="input-field" value={formData.nombre || ''} onChange={e => setFormData({...formData, nombre: e.target.value})} />
-                <input required type="text" placeholder="Apellido" className="input-field" value={formData.apellido || ''} onChange={e => setFormData({...formData, apellido: e.target.value})} />
-              </div>
-              <input type="text" placeholder="DNI" className="input-field w-full" value={formData.dni || ''} onChange={e => setFormData({...formData, dni: e.target.value})} />
-              <div className="grid grid-cols-2 gap-4">
-                <input type="email" placeholder="Email" className="input-field w-full" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
-                <input type="text" placeholder="Teléfono" className="input-field w-full" value={formData.telefono || ''} onChange={e => setFormData({...formData, telefono: e.target.value})} />
-              </div>
-              <div className="grid grid-cols-1 gap-4 p-4 border rounded-xl border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-900/50">
-                <div className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-2">
-                  <AlertTriangle className="w-4 h-4 inline mr-1 -mt-0.5" /> Opciones Avanzadas
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 mb-1 block">Estado</label>
-                  <select className="input-field w-full border-amber-200 focus:ring-amber-500" value={formData.estado} onChange={e => setFormData({...formData, estado: e.target.value as EstadoSocio})}>
-                    <option value="Activo">Activo</option>
-                    <option value="Inactivo">Inactivo</option>
-                    <option value="Vitalicio">Vitalicio</option>
-                    <option value="Suspendido">Suspendido</option>
-                    <option value="Baja">Baja Definitiva</option>
-                  </select>
+          <div className="bg-white dark:bg-dark-800 rounded-3xl shadow-2xl w-full max-w-2xl p-6 md:p-8 my-auto relative animate-in zoom-in-95 duration-200 text-left">
+            <button type="button" onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-700 rounded-full transition-colors"><X className="w-5 h-5"/></button>
+            <h2 className="text-2xl font-bold mb-6 text-slate-800 dark:text-slate-100">{formData.id_socio ? 'Edición Avanzada' : 'Alta de'} Socio</h2>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              
+              {/* Identidad */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-dark-700 pb-1">Identidad</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="md:col-span-2">
+                    <input required type="text" placeholder="Nombre" className="input-field w-full" value={formData.nombre || ''} onChange={e => setFormData({...formData, nombre: e.target.value})} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <input required type="text" placeholder="Apellido" className="input-field w-full" value={formData.apellido || ''} onChange={e => setFormData({...formData, apellido: e.target.value})} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <input type="text" placeholder="DNI (Opcional)" className="input-field w-full" value={formData.dni || ''} onChange={e => setFormData({...formData, dni: e.target.value})} />
+                  </div>
+                  <div className="md:col-span-2 relative">
+                    <label className="absolute -top-2 left-2 bg-white dark:bg-dark-800 px-1 text-[10px] text-slate-500 font-semibold">F. Nacimiento</label>
+                    <input type="date" title="Fecha de Nacimiento" className="input-field w-full" value={formData.fecha_nacimiento || ''} onChange={e => setFormData({...formData, fecha_nacimiento: e.target.value})} />
+                  </div>
                 </div>
               </div>
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary">Cancelar</button>
-                <button type="submit" disabled={isSubmitting} className="btn-primary">{isSubmitting ? 'Guardando...' : 'Confirmar Cambios'}</button>
+
+              {/* Contacto */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-dark-700 pb-1">Contacto</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <input type="email" placeholder="Email" className="input-field w-full" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
+                  </div>
+                  <div>
+                    <input type="text" placeholder="Teléfono" className="input-field w-full" value={formData.telefono || ''} onChange={e => setFormData({...formData, telefono: e.target.value})} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Ubicación */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-dark-700 pb-1">Ubicación</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <input type="text" placeholder="Domicilio" className="input-field w-full" value={formData.domicilio || ''} onChange={e => setFormData({...formData, domicilio: e.target.value})} />
+                  </div>
+                  <div>
+                    <select className="input-field w-full capitalize" value={formData.localidad || ''} onChange={e => setFormData({...formData, localidad: e.target.value})}>
+                      <option value="">Seleccione Localidad...</option>
+                      {LOCALIDADES.map(loc => <option key={loc} value={loc.toLowerCase()}>{loc}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Nacionalidad */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-dark-700 pb-1">Nacionalidad</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <input type="text" placeholder="Nacionalidad" className="input-field w-full" value={formData.nacionalidad || ''} onChange={e => setFormData({...formData, nacionalidad: e.target.value})} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Opciones Avanzadas */}
+              <div className="mt-8 bg-amber-50/50 dark:bg-amber-900/10 rounded-2xl p-4 sm:p-5 border border-amber-100 dark:border-amber-900/20 space-y-4">
+                <h4 className="text-sm font-bold text-amber-700 dark:text-amber-500 mb-2 flex items-center gap-2">Opciones Avanzadas</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Estado (Carácter)</label>
+                    <select className="input-field w-full capitalize font-medium bg-white dark:bg-dark-800" value={formData.caracter || 'activo'} onChange={e => setFormData({...formData, caracter: e.target.value as any})}>
+                      <option value="activo">Activo</option><option value="inactivo">Inactivo</option><option value="vitalicio">Vitalicio</option><option value="suspendido">Suspendido</option>
+                      {(formData.caracter === 'baja' || !!formData.id_socio) && <option value="baja">Baja</option>}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Estado Civil / Situación</label>
+                    <input type="text" placeholder="Ej: Soltero, Casado, etc." className="input-field w-full bg-white dark:bg-dark-800" value={formData.estado || ''} onChange={e => setFormData({...formData, estado: e.target.value})} />
+                  </div>
+                  <div className="sm:col-span-3 relative mt-2">
+                     <label className="absolute -top-2 left-3 bg-white dark:bg-dark-800 px-1 text-[10px] text-amber-600 dark:text-amber-500 font-bold z-10">Fecha de Ingreso</label>
+                     <input required type="date" className="input-field w-full bg-white dark:bg-dark-800" value={formData.fecha_ingreso || ''} onChange={e => setFormData({...formData, fecha_ingreso: e.target.value})} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-6 w-full">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary w-full sm:w-auto justify-center">Cancelar</button>
+                <button type="submit" disabled={isSubmitting} className="btn-primary w-full sm:w-auto justify-center min-w-[140px]">{isSubmitting ? 'Guardando...' : 'Confirmar Cambios'}</button>
               </div>
             </form>
           </div>
@@ -432,6 +512,46 @@ function PagosTab() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState<number | null>(null);
 
+  // ABM State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState<Partial<Pago>>({
+    monto: 0, plan: 'Mensual', medio_pago: 'efectivo', link_comprobante: '', fecha_pago: new Date().toISOString().split('T')[0]
+  });
+
+  const handleRegisterOrUpdatePago = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSocio) return;
+    setIsSubmitting(true);
+    try {
+      if (formData.id_pago) {
+        // Enforce basic type coercions
+        await ApiService.updatePago(formData.id_pago, {
+          monto: VALORES_CUOTA[formData.plan as TipoPlan] || 0,
+          plan: formData.plan,
+          fecha_pago: formData.fecha_pago,
+          medio_pago: formData.medio_pago,
+          link_comprobante: formData.medio_pago === 'Virtual' ? formData.link_comprobante : null
+        });
+      } else {
+        await ApiService.registerPago(
+          selectedSocio.id_socio, 
+          formData.plan as TipoPlan, 
+          formData.fecha_pago || new Date().toISOString(), 
+          formData.medio_pago, 
+          formData.medio_pago === 'Virtual' ? (formData.link_comprobante || null) : null
+        );
+      }
+      setIsModalOpen(false);
+      handleSelectSocio(selectedSocio); // Refresh List
+    } catch(err) {
+      alert('Error guardando el pago.');
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     ApiService.getSocios().then(res => setSocios(res));
   }, []);
@@ -450,7 +570,7 @@ function PagosTab() {
   };
 
   const handleAnular = async (pago: Pago) => {
-    if (window.confirm(`¿Está seguro de que desea ANULAR este pago de $${pago.monto} realizado el ${new Date(pago.fecha_pago).toLocaleDateString()}? Esta acción es irreversible.`)) {
+    if (window.confirm(`¿Está seguro de que desea ANULAR este pago de $${pago.monto} realizado el ${pago.fecha_pago.split('T')[0].split('-').reverse().join('/')}? Esta acción es irreversible.`)) {
       setIsDeleting(pago.id_pago);
       try {
         await ApiService.deletePago(pago.id_pago);
@@ -472,8 +592,8 @@ function PagosTab() {
       {/* Buscador */}
       <div className="w-full md:w-1/3 flex flex-col gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-1">Anulación de Pagos</h2>
-          <p className="text-sm font-medium text-slate-500 mb-4">Busque un socio para auditar y anular sus cobros procesados.</p>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-1">Pagos registrados</h2>
+          <p className="text-sm font-medium text-slate-500 mb-4">Busque un socio para auditar y modificar sus cobros procesados.</p>
         </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -495,7 +615,7 @@ function PagosTab() {
               {filtered.map(s => (
                 <li key={s.id_socio}>
                   <button onClick={() => handleSelectSocio(s)} className={`w-full text-left p-3 hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors ${selectedSocio?.id_socio === s.id_socio ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 font-semibold' : 'text-slate-600 dark:text-slate-300'}`}>
-                    <div className="font-medium text-sm">{s.nombre} {s.apellido}</div>
+                    <div className="font-medium text-sm">{toCapitalCase(s.nombre)} {toCapitalCase(s.apellido)}</div>
                     <div className="text-xs opacity-70 mt-0.5">ID: {s.id_socio} {s.dni && `· DNI: ${s.dni}`}</div>
                   </button>
                 </li>
@@ -507,10 +627,22 @@ function PagosTab() {
 
       {/* Resultados y Pagos */}
       <div className="flex-1 flex flex-col border border-slate-200 dark:border-dark-700 rounded-2xl overflow-hidden bg-slate-50/50 dark:bg-dark-900/30">
-        <div className="p-4 border-b border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800">
+        <div className="p-4 border-b border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800 flex justify-between items-center">
           <h3 className="font-semibold text-slate-800 dark:text-slate-200">
-            {selectedSocio ? `Listado de Pagos: ${selectedSocio.nombre} ${selectedSocio.apellido}` : 'Seleccione un socio'}
+            {selectedSocio ? `Listado de Pagos: ${toCapitalCase(selectedSocio.nombre)} ${toCapitalCase(selectedSocio.apellido)}` : 'Seleccione un socio'}
           </h3>
+          {selectedSocio && (
+            <button 
+              onClick={() => {
+                setFormData({ monto: 0, plan: 'Mensual', medio_pago: 'efectivo', link_comprobante: '', fecha_pago: new Date().toISOString().split('T')[0] });
+                setIsModalOpen(true);
+              }}
+              className="p-1.5 bg-primary-100 text-primary-700 hover:bg-primary-200 dark:bg-primary-900/30 dark:text-primary-400 dark:hover:bg-primary-900/50 rounded-lg transition-colors flex items-center justify-center shrink-0" 
+              title="Registrar Nuevo Pago"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          )}
         </div>
         <div className="p-4 flex-1 overflow-y-auto">
           {!selectedSocio ? (
@@ -534,11 +666,28 @@ function PagosTab() {
                   <div>
                     <div className="font-bold text-slate-800 dark:text-slate-200 text-lg">${p.monto.toLocaleString()}</div>
                     <div className="text-xs text-slate-500 font-medium mt-1">
-                      {new Date(p.fecha_pago).toLocaleDateString()} · Cubre hasta {new Date(p.fin_cobertura).toLocaleDateString()}
+                      {p.fecha_pago.split('T')[0].split('-').reverse().join('/')} · Cubre hasta {p.fin_cobertura.split('T')[0].split('-').reverse().join('/')}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="px-2 py-1 bg-slate-100 dark:bg-dark-700 text-slate-600 dark:text-slate-400 rounded text-xs font-bold capitalize">{p.plan}</span>
+                    <button 
+                      onClick={() => {
+                         setFormData({
+                           id_pago: p.id_pago,
+                           monto: p.monto,
+                           plan: p.plan,
+                           fecha_pago: new Date(p.fecha_pago).toISOString().split('T')[0],
+                           medio_pago: p.medio_pago || 'efectivo',
+                           link_comprobante: p.link_comprobante || ''
+                         });
+                         setIsModalOpen(true);
+                       }}
+                      className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors flex items-center gap-2 group"
+                      title="Editar Pago"
+                    >
+                      <Edit className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                    </button>
                     <button 
                       onClick={() => handleAnular(p)}
                       disabled={isDeleting === p.id_pago}
@@ -554,6 +703,61 @@ function PagosTab() {
           )}
         </div>
       </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white dark:bg-dark-800 rounded-2xl shadow-xl w-full max-w-lg p-6 my-auto animate-in zoom-in-95 relative">
+            <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-700 rounded-full transition-colors"><X className="w-5 h-5"/></button>
+            <h2 className="text-xl font-bold mb-4">{formData.id_pago ? 'Editar Pago' : 'Nuevo Pago'}</h2>
+            
+            <form onSubmit={handleRegisterOrUpdatePago} className="space-y-4">
+               <div className="grid grid-cols-1 gap-4">
+                 <div>
+                    <label className="hidden">Monto Abonado</label>
+                    <div className="hidden">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</span>
+                      <input required type="number" min="0" step="0.01" className="input-field pl-8 w-full font-bold text-slate-700 dark:text-slate-200" value={formData.monto || ''} onChange={e=>setFormData({...formData, monto: Number(e.target.value)})} />
+                    </div>
+                 </div>
+                 <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Plan de Cobertura</label>
+                    <select className="input-field w-full capitalize" value={formData.plan} onChange={e => setFormData({...formData, plan: e.target.value})}>
+                      <option value="Mensual">Mensual (${VALORES_CUOTA.Mensual.toLocaleString()})</option>
+                      <option value="Semestral">Semestral (${VALORES_CUOTA.Semestral.toLocaleString()})</option>
+                      <option value="Anual">Anual (${VALORES_CUOTA.Anual.toLocaleString()})</option>
+                    </select>
+                 </div>
+               </div>
+
+               <div className="grid grid-cols-2 gap-4">
+                 <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Medio de Pago</label>
+                    <select className="input-field w-full" value={formData.medio_pago || 'efectivo'} onChange={e => setFormData({...formData, medio_pago: e.target.value})}>
+                      <option value="efectivo">Efectivo</option>
+                      <option value="Virtual">Transferencia / Billetera Virtual</option>
+                    </select>
+                 </div>
+                 <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Fecha de Pago</label>
+                    <input required type="date" className="input-field w-full" value={formData.fecha_pago || ''} onChange={e => setFormData({...formData, fecha_pago: e.target.value})} />
+                 </div>
+               </div>
+
+               {formData.medio_pago === 'Virtual' ? (
+                 <div className="pt-2">
+                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Comprobante URL</label>
+                    <input type="url" placeholder="https://..." className="input-field w-full text-blue-600" value={formData.link_comprobante || ''} onChange={e => setFormData({...formData, link_comprobante: e.target.value})} />
+                 </div>
+               ) : null}
+
+               <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 dark:border-dark-700 mt-6">
+                 <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary">Cancelar</button>
+                 <button type="submit" disabled={isSubmitting} className="btn-primary min-w-[120px] justify-center">{isSubmitting ? 'Guardando...' : 'Guardar Pago'}</button>
+               </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

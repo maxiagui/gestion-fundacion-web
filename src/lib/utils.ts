@@ -12,3 +12,30 @@ export const normalizeSearch = (str: string) => {
   };
   return str.toLowerCase().replace(/[áéíóúàèìòùäëïöüâêîôûÁÉÍÓÚÀÈÌÒÙÄËÏÖÜÂÊÎÔÛ]/g, match => map[match] || match);
 };
+
+export const toCapitalCase = (str: string | undefined | null) => {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+export const LOCALIDADES = [
+  "Aguas Verdes",
+  "Costa Azul",
+  "Costa Chica",
+  "Costa del Este",
+  "Costa Esmeralda",
+  "Gral Lavalle",
+  "La Lucila del Mar",
+  "Las Toninas",
+  "Mar de Ajó",
+  "Mar del Tuyú",
+  "Nueva Atlantis",
+  "Paraje Pavón",
+  "Pinamar",
+  "San Bernardo",
+  "San Clemente del Tuyú",
+  "Santa Teresita"
+];
